@@ -1,11 +1,11 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::str::FromStr;
 use crate::{FlatJsonValue, ValueType};
 
 #[cfg(feature = "indexmap")]
 type Map<K, V> = indexmap::IndexMap<K, V>;
 #[cfg(not(feature = "indexmap"))]
-type Map<K, V> = HashMap<K, V>;
+type Map<K, V> = std::collections::HashMap<K, V>;
 
 #[derive(Debug)]
 pub enum Value {
@@ -19,6 +19,9 @@ pub enum Value {
 
 fn serialize_to_json(mut data: FlatJsonValue) -> Value {
     let mut root = Value::Object(new_map());
+    let mut root_array = Value::Array(Vec::with_capacity(128));
+
+    let mut root_is_obj = true;
 
     let mut sorted_data = data;
     sorted_data.sort_by(|(a, _), (b, _)|
@@ -34,20 +37,39 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
         let mut current_parent = &mut root;
 
         if key.depth == 1 {
+            let b = &key.pointer.as_bytes()[1];
+            if *b >= 0x30 && *b <= 0x39 {
+                current_parent = &mut root_array;
+                root_is_obj = false;
+            }
             match current_parent {
                 Value::Object(obj) => {
                     if matches!(key.value_type, ValueType::Object) {
                         obj.insert(key.pointer[1..].to_string(), Value::Object(new_map()));
+                    } else if matches!(key.value_type, ValueType::Array) {
+                        obj.insert(key.pointer[1..].to_string(), Value::Array(Vec::with_capacity(128)));
                     } else {
                         obj.insert(key.pointer[1..].to_string(), value_to_json(value, &key.value_type));
+                    }
+                }
+                Value::Array(array) => {
+                    if matches!(key.value_type, ValueType::Object) {
+                        array.push(Value::Object(new_map()));
+                    }  else if matches!(key.value_type, ValueType::Array) {
+                        array.push(Value::Array(Vec::with_capacity(128)));
+                    } else {
+                        array.push(value_to_json(value, &key.value_type));
                     }
                 }
                 _ => panic!("only Object is accepted for root node")
             }
         } else {
-            let parent = key.parent();
             let segments: Vec<&str> = key.pointer.split('/').filter(|s| !s.is_empty()).collect();
             let mut k = "";
+            let b = &key.pointer.as_bytes()[1];
+            if *b >= 0x30 && *b <= 0x39 {
+                current_parent = &mut root_array;
+            }
             for j in 0..(segments.len() - 1) {
                 let s = segments[j];
                 match current_parent {
@@ -55,17 +77,31 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                         k = s;
                         current_parent = obj.get_mut(s).expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
                     }
+                    Value::Array(ref mut array) => {
+                        k = s;
+                        current_parent = array.get_mut(usize::from_str(k).unwrap()).expect(format!("Expected to find parent at index for {}, current segment {}", key.pointer, s).as_str());
+                    }
                     _ => panic!("only Object is accepted for root node")
                 }
-                println!("{} | {} | {:?}", key.depth, key.pointer, parent);
             }
             k = segments[segments.len() - 1];
             match current_parent {
                 Value::Object(obj) => {
                     if matches!(key.value_type, ValueType::Object) {
                         obj.insert(k.to_string(), Value::Object(new_map()));
-                    } else {
+                    } else if matches!(key.value_type, ValueType::Array) {
+                        obj.insert(k.to_string(), Value::Array(Vec::with_capacity(128)));
+                    }  else {
                         obj.insert(k.to_string(), value_to_json(value, &key.value_type));
+                    }
+                }
+                Value::Array(array) => {
+                    if matches!(key.value_type, ValueType::Object) {
+                        array.push(Value::Object(new_map()));
+                    }  else if matches!(key.value_type, ValueType::Array) {
+                        array.push(Value::Array(Vec::with_capacity(128)));
+                    } else {
+                        array.push(value_to_json(value, &key.value_type));
                     }
                 }
                 _ => panic!("only Object is accepted for root node")
@@ -74,7 +110,11 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
 
     }
 
-    root
+    if root_is_obj {
+        root
+    } else {
+        root_array
+    }
 }
 
 #[inline]
@@ -84,7 +124,7 @@ fn new_map() -> Map<String, Value> {
         indexmap::IndexMap::with_capacity(128)
     }
     #[cfg(not(feature = "indexmap"))]{
-        HashMap::with_capacity(128)
+        std::collections::HashMap::with_capacity(128)
     }
 }
 
@@ -114,8 +154,20 @@ impl Value {
                 format!("{{\n{}\n{:indent$}}}", members.join(",\n"), "", indent=(depth - 1) *2)
             }
             Value::Array(arr) => {
-                let elements: Vec<String> = arr.iter().map(|v| v._to_json(depth + 1)).collect();
-                format!("[{}]", elements.join(","))
+                let mut contains_nested_array = false;
+                let elements: Vec<String> = arr.iter().map(|v| {
+                    if matches!(v, Value::Array(_)) || matches!(v, Value::Object(_)) {
+                        contains_nested_array = true;
+                        format!("{:indent$}{}","", v._to_json(depth + 1), indent=(depth) * 2)
+                    } else {
+                        v._to_json(depth)
+                    }
+                }).collect();
+                if contains_nested_array {
+                    format!("[\n{}\n{:indent$}]", elements.join(",\n"), "", indent=(depth - 1) * 2)
+                } else {
+                    format!("[{}]", elements.join(", "))
+                }
             }
             Value::Number(num) => num.to_string(),
             Value::String(s) => format!("\"{}\"", s.replace("\"", "\\\"")),
@@ -152,18 +204,219 @@ r#"{
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default()).unwrap().json;
         let value = serialize_to_json(vec);
-        assert_eq!(json, value.to_json());
+        assert_eq!(value.to_json(), json);
     }
+
     #[test]
     fn simple_array() {
-        let json = r#"
-            [1, 2, 3]
-        "#;
+        let json =
+            r#"[1, 2, 3]"#;
 
         let mut parser = JSONParser::new(json);
         let res = parser.parse(ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
-        assert_eq!(json, value.to_json());
+        assert_eq!(value.to_json(), json);
+    }
+
+    #[test]
+    fn array_of_object() {
+        let json =
+r#"[{
+  "id": 1,
+  "maxLevel": 99,
+  "name": "NV_BASIC",
+  "aaa": true,
+  "bbb": null,
+  "flags": {
+    "a": true,
+    "b": false,
+    "c": {
+      "nested": "Oui"
+    }
+  }
+}, {
+  "id": 2,
+  "maxLevel": 10,
+  "name": "BASH",
+  "flags": {
+    "a": true,
+    "b": false,
+    "c": {
+      "nested": "Oui"
+    }
+  }
+}]"#;
+
+        let mut parser = JSONParser::new(json);
+        let res = parser.parse(ParseOptions::default()).unwrap();
+        let vec = res.json;
+        let value = serialize_to_json(vec);
+        assert_eq!(value.to_json(), json);
+    }
+
+    #[test]
+    fn array_of_array() {
+        let json =
+r#"[
+  [1, 2, 3],
+  [6, 7, 8]
+]"#;
+
+        let mut parser = JSONParser::new(json);
+        let res = parser.parse(ParseOptions::default()).unwrap();
+        let vec = res.json;
+        let value = serialize_to_json(vec);
+        assert_eq!(value.to_json(), json);
+    }
+
+    #[test]
+    fn actual_test_data() {
+        let json =
+r#"{
+  "skills": [
+    {
+      "description": "Basic Skill",
+      "id": 1,
+      "maxLevel": 9,
+      "name": "NV_BASIC",
+      "basicSkillPerLevel": [
+        {
+          "level": 1,
+          "value": "Trade"
+        },
+        {
+          "level": 2,
+          "value": "Emoticon"
+        },
+        {
+          "level": 3,
+          "value": "Sit"
+        },
+        {
+          "level": 4,
+          "value": "Chat Room (create)"
+        },
+        {
+          "level": 5,
+          "value": "Party (join)"
+        },
+        {
+          "level": 6,
+          "value": "Kafra Storage"
+        },
+        {
+          "level": 7,
+          "value": "Party (create)"
+        },
+        {
+          "level": 8,
+          "value": "-"
+        },
+        {
+          "level": 9,
+          "value": "Job Change"
+        }
+      ],
+      "targetType": "Passive"
+    },
+    {
+      "description": "Sword Mastery",
+      "id": 2,
+      "maxLevel": 10,
+      "name": "SM_SWORD",
+      "type": "Weapon",
+      "bonusToSelf": [
+        {
+          "level": 1,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 4
+          }
+        },
+        {
+          "level": 2,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 8
+          }
+        },
+        {
+          "level": 3,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 12
+          }
+        },
+        {
+          "level": 4,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 16
+          }
+        },
+        {
+          "level": 5,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 20
+          }
+        },
+        {
+          "level": 6,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 24
+          }
+        },
+        {
+          "level": 7,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 28
+          }
+        },
+        {
+          "level": 8,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 32
+          }
+        },
+        {
+          "level": 9,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 36
+          }
+        },
+        {
+          "level": 10,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 40
+          }
+        }
+      ],
+      "targetType": "Passive"
+    }
+  ]
+}"#;
+
+        let mut parser = JSONParser::new(json);
+        let res = parser.parse(ParseOptions::default()).unwrap();
+        let vec = res.json;
+        let value = serialize_to_json(vec);
+        assert_eq!(value.to_json(), json);
     }
 }

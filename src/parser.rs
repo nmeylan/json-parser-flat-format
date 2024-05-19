@@ -44,7 +44,7 @@ impl<'a> Parser<'a> {
                 if let Some(ref p) = parse_option.prefix { pointer_fragment.push(p.clone()) }
                 let i = 0;
                 self.root_value_type = ValueType::Array;
-                self.parse_value(&mut pointer_fragment, &mut values, depth, i, parse_option, &mut position)?;
+                self.parse_value(&mut pointer_fragment, &mut values, depth - 1, i, parse_option, &mut position)?;
                 return Ok(ParseResult {
                     json: values,
                     max_json_depth: self.max_depth,
@@ -128,14 +128,18 @@ impl<'a> Parser<'a> {
                 }
                 Token::SquareOpen => {
                     self.next_token();
+                    if route.len() > 0 && parse_option.parse_array {
+                        *position += 1;
+                        target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Array, depth, *position), None));
+                    }
                     while let Some(ref token) = self.current_token {
                         if matches!(token, Token::SquareClose) {
-                            route.pop();
+                            // route.pop();
                             break;
                         }
                         if parse_option.parse_array || (parse_option.start_parse_at.is_some() && !self.state_seen_start_parse_at && parse_option.start_parse_at.as_ref().unwrap().eq(&Self::concat_route(route))) {
                             route.push("/0".to_string());
-                            self.parse_value(route, target, depth, count, parse_option, position);
+                            self.parse_value(route, target, depth + 1, count, parse_option, position);
                             route.pop();
                             self.next_token();
                             let mut i = 1;
@@ -152,7 +156,7 @@ impl<'a> Parser<'a> {
                                 self.next_token();
                                 if let Some(ref _token) = self.current_token {
                                     route.push(format!("/{}", i));
-                                    self.parse_value(route, target, depth, count, parse_option, position);
+                                    self.parse_value(route, target, depth + 1, count, parse_option, position);
                                     route.pop();
                                 } else {
                                     break;
@@ -410,15 +414,23 @@ mod tests {
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default()).unwrap().json;
         println!("{:?}", vec);
-        assert_eq!(vec[0].0.pointer, "/0/0");
-        assert_eq!(vec[0].0.value_type, ValueType::Number);
-        assert_eq!(vec[0].1, Some("1".to_string()));
-        assert_eq!(vec[1].0.pointer, "/1/0");
+        assert_eq!(vec[0].0.pointer, "/0");
+        assert_eq!(vec[0].0.value_type, ValueType::Array);
+        assert_eq!(vec[1].0.pointer, "/0/0");
         assert_eq!(vec[1].0.value_type, ValueType::Number);
-        assert_eq!(vec[1].1, Some("2".to_string()));
-        assert_eq!(vec[2].0.pointer, "/2/0");
-        assert_eq!(vec[2].0.value_type, ValueType::Number);
-        assert_eq!(vec[2].1, Some("3".to_string()));
+        assert_eq!(vec[1].1, Some("1".to_string()));
+
+        assert_eq!(vec[2].0.pointer, "/1");
+        assert_eq!(vec[2].0.value_type, ValueType::Array);
+        assert_eq!(vec[3].0.pointer, "/1/0");
+        assert_eq!(vec[3].0.value_type, ValueType::Number);
+        assert_eq!(vec[3].1, Some("2".to_string()));
+
+        assert_eq!(vec[4].0.pointer, "/2");
+        assert_eq!(vec[4].0.value_type, ValueType::Array);
+        assert_eq!(vec[5].0.pointer, "/2/0");
+        assert_eq!(vec[5].0.value_type, ValueType::Number);
+        assert_eq!(vec[5].1, Some("3".to_string()));
     }
 
     #[test]
@@ -436,16 +448,24 @@ mod tests {
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default()).unwrap().json;
         println!("{:?}", vec);
-        assert_eq!(vec[1].0.pointer, "/skills/0/description");
-        assert_eq!(vec[1].0.parent(), "/skills/0");
-        assert_eq!(vec[1].0.value_type, ValueType::String);
-        assert_eq!(vec[1].1, Some("Basic Skill".to_string()));
-        assert_eq!(vec[3].0.pointer, "/skills/1/description");
-        assert_eq!(vec[3].0.value_type, ValueType::String);
-        assert_eq!(vec[3].1, Some("Heal".to_string()));
-        assert_eq!(vec[5].0.pointer, "/skills/2/description");
-        assert_eq!(vec[5].0.value_type, ValueType::String);
-        assert_eq!(vec[5].1, Some("Bash".to_string()));
+        assert_eq!(vec[0].0.pointer, "/skills");
+        assert_eq!(vec[0].0.value_type, ValueType::Array);
+        assert_eq!(vec[1].0.pointer, "/skills/0");
+        assert_eq!(vec[1].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.pointer, "/skills/0/description");
+        assert_eq!(vec[2].0.parent(), "/skills/0");
+        assert_eq!(vec[2].0.value_type, ValueType::String);
+        assert_eq!(vec[2].1, Some("Basic Skill".to_string()));
+        assert_eq!(vec[3].0.pointer, "/skills/1");
+        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[4].0.pointer, "/skills/1/description");
+        assert_eq!(vec[4].0.value_type, ValueType::String);
+        assert_eq!(vec[4].1, Some("Heal".to_string()));
+        assert_eq!(vec[5].0.pointer, "/skills/2");
+        assert_eq!(vec[5].0.value_type, ValueType::Object);
+        assert_eq!(vec[6].0.pointer, "/skills/2/description");
+        assert_eq!(vec[6].0.value_type, ValueType::String);
+        assert_eq!(vec[6].1, Some("Bash".to_string()));
     }
 
     #[test]
