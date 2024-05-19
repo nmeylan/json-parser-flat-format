@@ -77,6 +77,7 @@ pub struct PointerKey {
     pub value_type: ValueType,
     pub depth: u8,    // depth of the pointed value in the json
     pub index: usize, // index in the root json array
+    pub position: usize, // position on the original json
 }
 
 impl PartialEq<Self> for PointerKey {
@@ -118,20 +119,13 @@ macro_rules! concat_string {
 }
 
 impl PointerKey {
-    pub fn from_pointer(pointer: String, value_type: ValueType, depth: u8) -> Self {
+    pub fn from_pointer(pointer: String, value_type: ValueType, depth: u8, position: usize) -> Self {
         Self {
             pointer,
             value_type,
             depth,
+            position,
             index: 0,
-        }
-    }
-    pub fn from_pointer_and_index(pointer: String, value_type: ValueType, depth: u8, index: usize) -> Self {
-        Self {
-            pointer,
-            value_type,
-            depth,
-            index,
         }
     }
 }

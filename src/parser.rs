@@ -21,13 +21,14 @@ impl<'a> Parser<'a> {
     pub fn parse(&mut self, parse_option: &ParseOptions, depth: u8) -> Result<ParseResult, String> {
         let mut values: Vec<(PointerKey, Option<String>)> = Vec::with_capacity(10000);
         self.next_token();
+        let mut position = 0_usize;
         if let Some(current_token) = self.current_token.as_ref() {
             if matches!(current_token, Token::CurlyOpen) {
                 let mut pointer_fragment: Vec<String> = Vec::with_capacity(128);
                 if let Some(ref p) = parse_option.prefix { pointer_fragment.push(p.clone()) }
                 let i = 0;
                 self.root_value_type = ValueType::Object;
-                self.process(&mut pointer_fragment, &mut values, depth, i, parse_option)?;
+                self.process(&mut pointer_fragment, &mut values, depth, i, parse_option, &mut position)?;
                 return Ok(ParseResult {
                     json: values,
                     max_json_depth: self.max_depth,
@@ -43,7 +44,7 @@ impl<'a> Parser<'a> {
                 if let Some(ref p) = parse_option.prefix { pointer_fragment.push(p.clone()) }
                 let i = 0;
                 self.root_value_type = ValueType::Array;
-                self.parse_value(&mut pointer_fragment, &mut values, depth, i, parse_option, false)?;
+                self.parse_value(&mut pointer_fragment, &mut values, depth, i, parse_option, &mut position)?;
                 return Ok(ParseResult {
                     json: values,
                     max_json_depth: self.max_depth,
@@ -60,7 +61,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn process(&mut self, route: &mut PointerFragment, target: &mut FlatJsonValue, depth: u8, count: usize, parse_option: &ParseOptions) -> Result<(), String> {
+    fn process(&mut self, route: &mut PointerFragment, target: &mut FlatJsonValue, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize) -> Result<(), String> {
         if self.max_depth < depth as usize {
             self.max_depth = depth as usize;
         }
@@ -83,7 +84,7 @@ impl<'a> Parser<'a> {
             } else {
                 return Err("Expected ':' after object key".to_string());
             }
-            self.parse_value(route, target, depth, count, parse_option, true)?;
+            self.parse_value(route, target, depth, count, parse_option, position)?;
             self.next_token();
 
 
@@ -107,20 +108,21 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_value(&mut self, route: &mut PointerFragment, target: &mut FlatJsonValue, depth: u8, count: usize, parse_option: &ParseOptions, from_object: bool) -> Result<(), String> {
+    fn parse_value(&mut self, route: &mut PointerFragment, target: &mut FlatJsonValue, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize) -> Result<(), String> {
         match self.current_token {
             Some(ref token) => match token {
                 Token::CurlyOpen => {
                     if depth <= parse_option.max_depth as u8 {
                         let start = self.lexer.reader_index();
                         if let Some(object_str) = self.lexer.consume_string_until_end_of_object() {
-                            target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object, depth), Some(object_str.to_string())));
+                            *position += 1;
+                            target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object, depth, *position), Some(object_str.to_string())));
                             self.lexer.set_reader_index(start);
-                            self.process(route, target, depth + 1, count, parse_option);
+                            self.process(route, target, depth + 1, count, parse_option, position);
                         }
                     } else {
                         // consuming remaining token
-                        self.process(route, target, depth + 1, count, parse_option);
+                        self.process(route, target, depth + 1, count, parse_option, position);
                     }
                     Ok(())
                 }
@@ -133,7 +135,7 @@ impl<'a> Parser<'a> {
                         }
                         if parse_option.parse_array || (parse_option.start_parse_at.is_some() && !self.state_seen_start_parse_at && parse_option.start_parse_at.as_ref().unwrap().eq(&Self::concat_route(route))) {
                             route.push("/0".to_string());
-                            self.parse_value(route, target, depth, count, parse_option, false);
+                            self.parse_value(route, target, depth, count, parse_option, position);
                             route.pop();
                             self.next_token();
                             let mut i = 1;
@@ -150,7 +152,7 @@ impl<'a> Parser<'a> {
                                 self.next_token();
                                 if let Some(ref _token) = self.current_token {
                                     route.push(format!("/{}", i));
-                                    self.parse_value(route, target, depth, count, parse_option, false);
+                                    self.parse_value(route, target, depth, count, parse_option, position);
                                     route.pop();
                                 } else {
                                     break;
@@ -160,7 +162,8 @@ impl<'a> Parser<'a> {
                             }
                         } else if let Some(array_str) = self.lexer.consume_string_until_end_of_array() {
                             if depth <= parse_option.max_depth as u8 {
-                                target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Array, depth), Some(concat_string!("[", array_str, "]"))));
+                                *position += 1;
+                                target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Array, depth, *position), Some(concat_string!("[", array_str, "]"))));
                             }
                             break;
                         }
@@ -173,10 +176,12 @@ impl<'a> Parser<'a> {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
-                                target.push((PointerKey::from_pointer(pointer, ValueType::String, depth), Some(value)));
+                                *position += 1;
+                                target.push((PointerKey::from_pointer(pointer, ValueType::String, depth, *position), Some(value)));
                             }
                         } else {
-                            target.push((PointerKey::from_pointer(pointer, ValueType::String, depth), Some(value)));
+                            *position += 1;
+                            target.push((PointerKey::from_pointer(pointer, ValueType::String, depth, *position), Some(value)));
                         }
                     }
 
@@ -188,10 +193,12 @@ impl<'a> Parser<'a> {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
-                                target.push((PointerKey::from_pointer(pointer, ValueType::Number, depth), Some(value)));
+                                *position += 1;
+                                target.push((PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), Some(value)));
                             }
                         } else {
-                            target.push((PointerKey::from_pointer(pointer, ValueType::Number, depth), Some(value)));
+                            *position += 1;
+                            target.push((PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), Some(value)));
                         }
                     }
                     Ok(())
@@ -202,10 +209,12 @@ impl<'a> Parser<'a> {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
-                                target.push((PointerKey::from_pointer(pointer, ValueType::Bool, depth), Some(value.to_string())));
+                                *position += 1;
+                                target.push((PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), Some(value.to_string())));
                             }
                         } else {
-                            target.push((PointerKey::from_pointer(pointer, ValueType::Bool, depth), Some(value.to_string())));
+                            *position += 1;
+                            target.push((PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), Some(value.to_string())));
                         }
                     }
                     Ok(())
@@ -215,10 +224,12 @@ impl<'a> Parser<'a> {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
-                                target.push((PointerKey::from_pointer(pointer, ValueType::Null, depth), None));
+                                *position += 1;
+                                target.push((PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), None));
                             }
                         } else {
-                            target.push((PointerKey::from_pointer(pointer, ValueType::Null, depth), None));
+                            *position += 1;
+                            target.push((PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), None));
                         }
                     }
                     Ok(())

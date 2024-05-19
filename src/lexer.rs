@@ -176,7 +176,7 @@ impl<'a> Lexer<'a> {
 fn to_string(bytes: &[u8]) -> Option<&str> {
 
     #[cfg(feature = "simdutf8")]{
-        simdutf8::basic::from_utf8(bytes).ok()?
+        simdutf8::basic::from_utf8(bytes).ok()
     }
     #[cfg(not(feature = "simdutf8"))]{
         std::str::from_utf8(bytes).ok()
