@@ -14,7 +14,8 @@ pub struct JSONParser<'a> {
 #[derive(Clone)]
 pub struct ParseOptions {
     pub parse_array: bool,
-    pub max_depth: usize,
+    pub keep_object_raw_data: bool,
+    pub max_depth: u8,
     pub start_parse_at: Option<String>,
     pub prefix: Option<String>,
 }
@@ -23,6 +24,7 @@ impl Default for ParseOptions {
     fn default() -> Self {
         Self {
             parse_array: true,
+            keep_object_raw_data: true,
             max_depth: 10,
             start_parse_at: None,
             prefix: None,
@@ -40,12 +42,16 @@ impl ParseOptions {
         self.start_parse_at = Some(pointer);
         self
     }
-    pub fn max_depth(mut self, max_depth: usize) -> Self {
+    pub fn max_depth(mut self, max_depth: u8) -> Self {
         self.max_depth = max_depth;
         self
     }
     pub fn prefix(mut self, prefix: String) -> Self {
         self.prefix = Some(prefix);
+        self
+    }
+    pub fn keep_object_raw_data(mut self, keep_object_raw_data: bool) -> Self {
+        self.keep_object_raw_data = keep_object_raw_data;
         self
     }
 }
@@ -152,11 +158,10 @@ pub type FlatJsonValue = Vec<(PointerKey, Option<String>)>;
 pub struct ParseResult {
     pub json: FlatJsonValue,
     pub max_json_depth: usize,
-    pub parsing_max_depth: usize,
+    pub parsing_max_depth: u8,
     pub root_value_type: ValueType,
     pub started_parsing_at: Option<String>,
     pub parsing_prefix: Option<String>,
-    pub root_array_len: usize,
 }
 
 impl ParseResult {
@@ -168,7 +173,6 @@ impl ParseResult {
             root_value_type: Default::default(),
             started_parsing_at: self.started_parsing_at.clone(),
             parsing_prefix: self.parsing_prefix.clone(),
-            root_array_len: self.root_array_len,
         }
     }
 }
@@ -201,7 +205,7 @@ impl<'a> JSONParser<'a> {
     pub fn change_depth(previous_parse_result: ParseResult, mut parse_options: ParseOptions) -> Result<ParseResult, String> {
         if previous_parse_result.parsing_max_depth < parse_options.max_depth {
             let previous_len = previous_parse_result.json.len();
-            let mut new_flat_json_structure = FlatJsonValue::with_capacity(previous_len + (parse_options.max_depth - previous_parse_result.parsing_max_depth) * (previous_len / 3));
+            let mut new_flat_json_structure = FlatJsonValue::with_capacity(previous_len + (parse_options.max_depth - previous_parse_result.parsing_max_depth) as usize * (previous_len / 3));
             for (k, v) in previous_parse_result.json {
                 if !matches!(k.value_type, ValueType::Object) {
                     new_flat_json_structure.push((k, v));
@@ -228,11 +232,7 @@ impl<'a> JSONParser<'a> {
                 root_value_type: previous_parse_result.root_value_type,
                 started_parsing_at: previous_parse_result.started_parsing_at,
                 parsing_prefix: previous_parse_result.parsing_prefix,
-                root_array_len: previous_parse_result.root_array_len,
             })
-        } else if previous_parse_result.parsing_max_depth > parse_options.max_depth {
-            // serialization
-            todo!("");
         } else {
             Ok(previous_parse_result)
         }
