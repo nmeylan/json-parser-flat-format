@@ -138,7 +138,7 @@ impl PointerKey {
 #[derive(Eq, Hash, PartialEq, Debug, Clone, Copy)]
 #[derive(Default)]
 pub enum ValueType {
-    Array,
+    Array(usize),
     Object,
     Number,
     String,
@@ -159,7 +159,6 @@ pub struct ParseResult {
     pub json: FlatJsonValue,
     pub max_json_depth: usize,
     pub parsing_max_depth: u8,
-    pub root_value_type: ValueType,
     pub started_parsing_at: Option<String>,
     pub parsing_prefix: Option<String>,
 }
@@ -170,7 +169,6 @@ impl ParseResult {
             json: Default::default(),
             max_json_depth: self.max_json_depth,
             parsing_max_depth: self.parsing_max_depth,
-            root_value_type: Default::default(),
             started_parsing_at: self.started_parsing_at.clone(),
             parsing_prefix: self.parsing_prefix.clone(),
         }
@@ -229,7 +227,6 @@ impl<'a> JSONParser<'a> {
                 json: new_flat_json_structure,
                 max_json_depth: previous_parse_result.max_json_depth,
                 parsing_max_depth: parse_options.max_depth,
-                root_value_type: previous_parse_result.root_value_type,
                 started_parsing_at: previous_parse_result.started_parsing_at,
                 parsing_prefix: previous_parse_result.parsing_prefix,
             })

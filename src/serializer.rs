@@ -48,7 +48,7 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                 Value::Object(obj) => {
                     if matches!(key.value_type, ValueType::Object) {
                         obj.insert(key.pointer[1..].to_string(), Value::Object(new_map()));
-                    } else if matches!(key.value_type, ValueType::Array) {
+                    } else if matches!(key.value_type, ValueType::Array(_)) {
                         if let Some(value) = value {
                             obj.insert(key.pointer[1..].to_string(),Value::ArraySerialized(value));
                         } else {
@@ -61,7 +61,7 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                 Value::Array(array) => {
                     if matches!(key.value_type, ValueType::Object) {
                         array.push(Value::Object(new_map()));
-                    }  else if matches!(key.value_type, ValueType::Array) {
+                    }  else if matches!(key.value_type, ValueType::Array(_)) {
                         if let Some(value) = value {
                             array.push(Value::ArraySerialized(value));
                         } else {
@@ -106,7 +106,7 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                     Value::Object(obj) => {
                         if matches!(key.value_type, ValueType::Object) {
                             obj.insert(k.to_string(), Value::Object(new_map()));
-                        } else if matches!(key.value_type, ValueType::Array) {
+                        } else if matches!(key.value_type, ValueType::Array(_)) {
                             if let Some(value) = value {
                                 obj.insert(k.to_string(),Value::ArraySerialized(value));
                             } else {
@@ -119,7 +119,7 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                     Value::Array(array) => {
                         if matches!(key.value_type, ValueType::Object) {
                             array.push(Value::Object(new_map()));
-                        }  else if matches!(key.value_type, ValueType::Array) {
+                        }  else if matches!(key.value_type, ValueType::Array(_)) {
                             if let Some(value) = value {
                                 array.push(Value::ArraySerialized(value));
                             } else {
