@@ -1,6 +1,5 @@
 use std::fmt::{Display};
 use std::hash::{Hash, Hasher};
-use std::time::Instant;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 

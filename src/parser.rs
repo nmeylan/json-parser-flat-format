@@ -116,6 +116,7 @@ impl<'a> Parser<'a> {
                         let start = self.lexer.reader_index();
                         if let Some(object_str) = self.lexer.consume_string_until_end_of_object() {
                             *position += 1;
+                            // TODO this should be a parser option
                             target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object, depth, *position), Some(object_str.to_string())));
                             self.lexer.set_reader_index(start);
                             self.process(route, target, depth + 1, count, parse_option, position);
@@ -128,7 +129,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::SquareOpen => {
                     self.next_token();
-                    if route.len() > 0 && parse_option.parse_array {
+                    if route.len() > 0 && self.should_parse_array(&route, parse_option) {
                         *position += 1;
                         target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Array, depth, *position), None));
                     }
@@ -137,7 +138,7 @@ impl<'a> Parser<'a> {
                             // route.pop();
                             break;
                         }
-                        if parse_option.parse_array || (parse_option.start_parse_at.is_some() && !self.state_seen_start_parse_at && parse_option.start_parse_at.as_ref().unwrap().eq(&Self::concat_route(route))) {
+                        if self.should_parse_array(&route, parse_option) {
                             route.push("/0".to_string());
                             self.parse_value(route, target, depth + 1, count, parse_option, position);
                             route.pop();
@@ -242,6 +243,12 @@ impl<'a> Parser<'a> {
             },
             _ => Err("Unexpected end of input".to_string())
         }
+    }
+
+    fn should_parse_array(&mut self, route: &&mut PointerFragment, parse_option: &ParseOptions) -> bool {
+        parse_option.parse_array
+            // When parse_array is disable, we allow to parse array if we set a pointer from where we start parsing and this pointer is an array itself, otherwise we would not parse anything
+            || (parse_option.start_parse_at.is_some() && !self.state_seen_start_parse_at && parse_option.start_parse_at.as_ref().unwrap().eq(&Self::concat_route(route)))
     }
     #[inline]
     fn concat_route(route: &PointerFragment) -> String {
@@ -483,19 +490,23 @@ mod tests {
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap().json;
         println!("{:?}", vec);
-        assert_eq!(vec.len(), 9);
-        assert_eq!(vec[1].0.pointer, "/skills/0/description");
-        assert_eq!(vec[1].0.value_type, ValueType::String);
-        assert_eq!(vec[2].0.pointer, "/skills/0/inner");
-        assert_eq!(vec[2].0.value_type, ValueType::Array);
-        assert_eq!(vec[4].0.pointer, "/skills/1/description");
-        assert_eq!(vec[4].0.value_type, ValueType::String);
-        assert_eq!(vec[5].0.pointer, "/skills/1/inner");
-        assert_eq!(vec[5].0.value_type, ValueType::Array);
-        assert_eq!(vec[7].0.pointer, "/skills/2/description");
-        assert_eq!(vec[7].0.value_type, ValueType::String);
-        assert_eq!(vec[8].0.pointer, "/skills/2/inner");
-        assert_eq!(vec[8].0.value_type, ValueType::Array);
+        assert_eq!(vec.len(), 10);
+        assert_eq!(vec[0].0.pointer, "/skills");
+        assert_eq!(vec[0].0.value_type, ValueType::Array);
+        assert_eq!(vec[1].0.pointer, "/skills/0");
+        assert_eq!(vec[1].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.pointer, "/skills/0/description");
+        assert_eq!(vec[2].0.value_type, ValueType::String);
+        assert_eq!(vec[3].0.pointer, "/skills/0/inner");
+        assert_eq!(vec[3].0.value_type, ValueType::Array);
+        assert_eq!(vec[5].0.pointer, "/skills/1/description");
+        assert_eq!(vec[5].0.value_type, ValueType::String);
+        assert_eq!(vec[6].0.pointer, "/skills/1/inner");
+        assert_eq!(vec[6].0.value_type, ValueType::Array);
+        assert_eq!(vec[8].0.pointer, "/skills/2/description");
+        assert_eq!(vec[8].0.value_type, ValueType::String);
+        assert_eq!(vec[9].0.pointer, "/skills/2/inner");
+        assert_eq!(vec[9].0.value_type, ValueType::Array);
     }
 
     #[test]
