@@ -260,3 +260,14 @@ impl<'a> JSONParser<'a> {
         res
     }
 }
+
+
+#[inline]
+pub fn string_from_bytes(bytes: &[u8]) -> Option<&str> {
+    #[cfg(feature = "simdutf8")]{
+        simdutf8::basic::from_utf8(bytes).ok()
+    }
+    #[cfg(not(feature = "simdutf8"))]{
+        std::str::from_utf8(bytes).ok()
+    }
+}

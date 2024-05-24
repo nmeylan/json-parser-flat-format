@@ -1,5 +1,5 @@
 use std::mem;
-use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResult, PointerFragment, PointerKey, ValueType};
+use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResult, PointerFragment, PointerKey, string_from_bytes, ValueType};
 use crate::lexer::{Lexer, Token};
 
 pub struct Parser<'a> {
@@ -274,12 +274,12 @@ impl<'a> Parser<'a> {
     }
     #[inline]
     fn concat_route(route: &PointerFragment) -> String {
-        let i = mem::size_of_val(route);
-        let mut res = String::with_capacity(i);
+        let i = mem::size_of_val(route) * route.len();
+        let mut res = Vec::with_capacity(i);
         for p in route {
-            res.push_str(p.as_str());
+            res.extend_from_slice(p.as_bytes());
         }
-        res
+        string_from_bytes(res.as_slice()).unwrap().into()
     }
     #[inline]
     fn next_token(&mut self) {

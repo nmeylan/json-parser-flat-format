@@ -1,3 +1,5 @@
+use crate::string_from_bytes;
+
 #[derive(Debug)]
 pub enum Token<'a> {
     CurlyOpen,
@@ -131,7 +133,7 @@ impl<'a> Lexer<'a> {
                 b'[' => square_close_count += 1,
                 b']' => {
                     if square_close_count == 1 {
-                        return Some(to_string(&self.reader.slice[start..self.reader.index - 1])?);
+                        return Some(string_from_bytes(&self.reader.slice[start..self.reader.index - 1])?);
                     } else {
                         square_close_count -= 1;
                     }
@@ -178,7 +180,7 @@ impl<'a> Lexer<'a> {
                 b'{' => square_close_count += 1,
                 b'}' => {
                     if square_close_count == 1 {
-                        let value = to_string(&self.reader.slice[start..self.reader.index])?;
+                        let value = string_from_bytes(&self.reader.slice[start..self.reader.index])?;
                         return Some(value);
                     } else {
                         square_close_count -= 1;
@@ -207,7 +209,7 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     self.reader.index -= 1;
-                    let s = to_string(&self.reader.slice[start..self.reader.index])?;
+                    let s = string_from_bytes(&self.reader.slice[start..self.reader.index])?;
                     return Some(Token::Number(s))
                 }
                 b'"' => {
@@ -217,7 +219,7 @@ impl<'a> Lexer<'a> {
                             break; // End of string unless escaped
                         }
                     }
-                    let s = to_string(&self.reader.slice[start..self.reader.index - 1])?;
+                    let s = string_from_bytes(&self.reader.slice[start..self.reader.index - 1])?;
                     return Some(Token::String(s))
                 }
                 b't' if self.reader.match_pattern(b"rue") => return Some(Token::Boolean(true)),
@@ -231,12 +233,4 @@ impl<'a> Lexer<'a> {
     }
 }
 
-#[inline]
-fn to_string(bytes: &[u8]) -> Option<&str> {
-    #[cfg(feature = "simdutf8")]{
-        simdutf8::basic::from_utf8(bytes).ok()
-    }
-    #[cfg(not(feature = "simdutf8"))]{
-        std::str::from_utf8(bytes).ok()
-    }
-}
+
