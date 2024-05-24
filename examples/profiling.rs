@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
@@ -15,8 +16,17 @@ fn main() {
 
     let start = Instant::now();
     let mut parser = JSONParser::new(content.as_mut_str());
-    let options = ParseOptions::default().parse_array(true).max_depth(10);
-    let result = parser.parse(options.clone()).unwrap();
+    let options = ParseOptions::default().parse_array(true).max_depth(100);
+    let mut result = parser.parse(options.clone()).unwrap();
     let max_depth = result.max_json_depth;
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, max_depth, result.json.len());
+
+
+    // let mut sorted_data = result.json;
+    // sorted_data.sort_by(|(a, _), (b, _)|
+    //     a.pointer.cmp(&b.pointer));
+    // for (pointer, v) in sorted_data.iter() {
+    //     println!("{} => {:?}", pointer.pointer, v)
+    // }
+
 }

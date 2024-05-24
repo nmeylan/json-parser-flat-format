@@ -33,6 +33,26 @@ impl<'a> SliceRead<'a> {
         }
     }
     #[inline]
+    pub fn next_u64(&mut self) -> Option<u64> {
+        if self.index + 8 < self.slice.len() {
+            let result = u64::from_le_bytes(
+                [self.slice[self.index], self.slice[self.index + 1], self.slice[self.index + 2], self.slice[self.index + 3],
+                    self.slice[self.index + 4], self.slice[self.index + 5], self.slice[self.index + 6], self.slice[self.index + 7]]);
+            self.index += 8;
+            Some(result)
+        } else if self.index + 8 < self.slice.len() {
+            let mut v: [u8; 8] = [0; 8];
+            let mut i = 0;
+            while i < self.slice.len() {
+                v[i] = self.slice[self.index + i];
+            }
+            self.index += i + 1;
+            Some(u64::from_le_bytes(v))
+        } else {
+            None
+        }
+    }
+    #[inline]
     pub fn peek(&self) -> Option<u8> {
         if self.index < self.slice.len() {
             Some(self.slice[self.index])
@@ -69,12 +89,26 @@ impl<'a> SliceRead<'a> {
             false
         }
     }
+
+    pub fn data(&self) -> &'a [u8] {
+        self.slice
+    }
 }
 
 
 pub struct Lexer<'a> {
     reader: SliceRead<'a>,
 }
+
+
+const MASK_OPEN_CURLY: u64 = 0x0101010101010101 * b'{' as u64;
+const MASK_OPEN_CURLY_SINGLE: u8 = 0x01 * b'{' as u8;
+const MASK_CLOSE_CURLY: u64 = 0x0101010101010101 * b'}' as u64;
+const MASK_CLOSE_CURLY_SINGLE: u8 = 0x01 * b'}' as u8;
+const MASK_OPEN_SQUARE: u64 = 0x0101010101010101 * b'[' as u64;
+const MASK_OPEN_SQUARE_SINGLE: u8 = 0x01 * b'[' as u8;
+const MASK_CLOSE_SQUARE: u64 = 0x0101010101010101 * b']' as u64;
+const MASK_CLOSE_SQUARE_SINGLE: u8 = 0x01 * b']' as u8;
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a [u8]) -> Self {
@@ -86,8 +120,23 @@ impl<'a> Lexer<'a> {
     pub fn consume_string_until_end_of_array(&mut self) -> Option<&'a str> {
         let mut square_close_count = 1;
         let start = self.reader.index - 1;
-        self.reader.skip_whitespace();
         while !self.reader.is_at_end() {
+            let current_index = self.reader.index;
+            if let Some(bytes) = self.reader.next_u64() {
+                let comparison = MASK_CLOSE_SQUARE ^ bytes;
+                let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
+                if high_bit_mask1 == 0 {
+                    let comparison = MASK_OPEN_SQUARE ^ bytes;
+                    let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
+                    if high_bit_mask1 == 0 {
+                        continue;
+                    } else {
+                        self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
+                    }
+                } else {
+                    self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
+                }
+            }
             match self.reader.next()? {
                 b'[' => square_close_count += 1,
                 b']' => {
@@ -96,7 +145,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         square_close_count -= 1;
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -106,6 +155,9 @@ impl<'a> Lexer<'a> {
     pub fn reader_index(&self) -> usize {
         self.reader.index
     }
+    pub fn reader(&mut self) -> &SliceRead<'a> {
+        &self.reader
+    }
 
     pub fn set_reader_index(&mut self, index: usize) {
         self.reader.index = index;
@@ -114,8 +166,24 @@ impl<'a> Lexer<'a> {
     pub fn consume_string_until_end_of_object(&mut self) -> Option<&'a str> {
         let mut square_close_count = 1;
         let start = self.reader.index - 1;
-        self.reader.skip_whitespace();
         while !self.reader.is_at_end() {
+            let current_index = self.reader.index;
+            if let Some(bytes) = self.reader.next_u64() {
+                let comparison = MASK_CLOSE_CURLY ^ bytes;
+                let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
+                if high_bit_mask1 == 0 {
+                    let comparison = MASK_OPEN_CURLY ^ bytes;
+                    let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
+                    if high_bit_mask1 == 0 {
+                        continue;
+                    } else {
+                        self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
+                    }
+                } else {
+                    self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
+                }
+            }
+
             match self.reader.next()? {
                 b'{' => square_close_count += 1,
                 b'}' => {
@@ -125,7 +193,7 @@ impl<'a> Lexer<'a> {
                     } else {
                         square_close_count -= 1;
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -174,7 +242,6 @@ impl<'a> Lexer<'a> {
 
 #[inline]
 fn to_string(bytes: &[u8]) -> Option<&str> {
-
     #[cfg(feature = "simdutf8")]{
         simdutf8::basic::from_utf8(bytes).ok()
     }

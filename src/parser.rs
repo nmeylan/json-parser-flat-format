@@ -178,6 +178,8 @@ impl<'a> Parser<'a> {
                             }
                             self.lexer.set_reader_index(start);
                             self.process_object(route, target, depth + 1, count, parse_option, position);
+                        } else {
+                            panic!("We should no go there! {}", String::from_utf8_lossy(&self.lexer.reader().data()[start..start + 1000]))
                         }
                     } else {
                         // consuming remaining token
