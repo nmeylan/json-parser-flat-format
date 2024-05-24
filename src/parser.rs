@@ -274,12 +274,11 @@ impl<'a> Parser<'a> {
     }
     #[inline]
     fn concat_route(route: &PointerFragment) -> String {
-        let i = mem::size_of_val(route) * route.len();
-        let mut res = Vec::with_capacity(i);
+        let mut res = String::with_capacity(64);
         for p in route {
-            res.extend_from_slice(p.as_bytes());
+            res.push_str(p);
         }
-        string_from_bytes(res.as_slice()).unwrap().into()
+        res
     }
     #[inline]
     fn next_token(&mut self) {
