@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 simdutf8 = { version = "0.1.4", optional = true }
 indexmap = { version = "2.2.6", optional = true }
+typed-arena = "2.0.2"
+bumpalo = { version = "3.16.0", default-features = false }
 
 [features]
 simdutf8 = ["dep:simdutf8"]

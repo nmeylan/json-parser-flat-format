@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
+use bumpalo::Bump;
+use typed_arena::Arena;
 use json_flat_parser::{JSONParser, ParseOptions};
 // dev - release
 // 22000 - 4800: initial
@@ -19,10 +21,11 @@ fn main() {
     let start = Instant::now();
     let mut parser = JSONParser::new(content.as_mut_str());
     let options = ParseOptions::default().parse_array(true).max_depth(100);
-    let mut result = parser.parse(options.clone()).unwrap();
+    let arena = Bump::with_capacity(1024 * 1024 * 64);
+    // let arena = Arena::with_capacity(1024 * 1024 * 64);
+    let mut result = parser.parse(options.clone(), &arena).unwrap();
     let max_depth = result.max_json_depth;
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, max_depth, result.json.len());
-
 
     // let mut sorted_data = result.json;
     // sorted_data.sort_by(|(a, _), (b, _)|
