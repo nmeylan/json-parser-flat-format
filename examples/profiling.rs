@@ -1,10 +1,11 @@
-use std::cmp::Ordering;
 use std::fs;
 use std::path::Path;
 use std::time::Instant;
 use json_flat_parser::{JSONParser, ParseOptions};
-
-// 22000: initial
+// dev - release
+// 22000 - 4800: initial
+// 19500 - 4500: swar for consume_string_until_end_of_array and consume_string_until_end_of_object
+// 17430 - 4200: Remove skip whitespace usage
 fn main() {
     // run: unzip skill-test.zip skill-test.json
 

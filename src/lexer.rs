@@ -61,16 +61,6 @@ impl<'a> SliceRead<'a> {
         }
     }
     #[inline]
-    pub fn skip_whitespace(&mut self) {
-        while let Some(&b) = self.slice.get(self.index) {
-            if b.is_ascii_whitespace() {
-                self.index += 1;
-            } else {
-                break;
-            }
-        }
-    }
-    #[inline]
     pub fn slice_from(&self, start: usize) -> &'a [u8] {
         &self.slice[start..self.index]
     }
@@ -201,42 +191,43 @@ impl<'a> Lexer<'a> {
     }
     #[inline]
     pub fn next_token(&mut self) -> Option<Token<'a>> {
-        self.reader.skip_whitespace();
-
-        match self.reader.next()? {
-            b'{' => Some(Token::CurlyOpen),
-            b'}' => Some(Token::CurlyClose),
-            b'[' => Some(Token::SquareOpen),
-            b']' => Some(Token::SquareClose),
-            b',' => Some(Token::Comma),
-            b':' => Some(Token::Colon),
-            b'-' | b'0' | b'1' | b'2' | b'3' | b'4' | b'5' | b'6' | b'7' | b'8' | b'9' => {
-                let start = self.reader.index - 1;
-                while let Some(b) = self.reader.next() {
-                    if !((b >= 0x30 && b <= 0x39) || b == b'.') {
-                        break;
+        loop {
+            match self.reader.next()? {
+                b'{' => return Some(Token::CurlyOpen),
+                b'}' => return Some(Token::CurlyClose),
+                b'[' => return Some(Token::SquareOpen),
+                b']' => return Some(Token::SquareClose),
+                b',' => return Some(Token::Comma),
+                b':' => return Some(Token::Colon),
+                b'-' | b'0' | b'1' | b'2' | b'3' | b'4' | b'5' | b'6' | b'7' | b'8' | b'9' => {
+                    let start = self.reader.index - 1;
+                    while let Some(b) = self.reader.next() {
+                        if !((b >= 0x30 && b <= 0x39) || b == b'.') {
+                            break;
+                        }
                     }
+                    self.reader.index -= 1;
+                    let s = to_string(&self.reader.slice[start..self.reader.index])?;
+                    return Some(Token::Number(s))
                 }
-                self.reader.index -= 1;
-                let s = to_string(&self.reader.slice[start..self.reader.index])?;
-                Some(Token::Number(s))
-            }
-            b'"' => {
-                let start = self.reader.index;
-                while let Some(b) = self.reader.next() {
-                    if b == b'"' && self.reader.slice[self.reader.index - 2] != b'\\' {
-                        break; // End of string unless escaped
+                b'"' => {
+                    let start = self.reader.index;
+                    while let Some(b) = self.reader.next() {
+                        if b == b'"' && self.reader.slice[self.reader.index - 2] != b'\\' {
+                            break; // End of string unless escaped
+                        }
                     }
+                    let s = to_string(&self.reader.slice[start..self.reader.index - 1])?;
+                    return Some(Token::String(s))
                 }
-                let s = to_string(&self.reader.slice[start..self.reader.index - 1])?;
-                Some(Token::String(s))
+                b't' if self.reader.match_pattern(b"rue") => return Some(Token::Boolean(true)),
+                b'f' if self.reader.match_pattern(b"alse") => return Some(Token::Boolean(false)),
+                b'n' if self.reader.match_pattern(b"ull") => return Some(Token::Null),
+                // Handle numbers, errors, etc.
+                _ => {},
             }
-            b't' if self.reader.match_pattern(b"rue") => Some(Token::Boolean(true)),
-            b'f' if self.reader.match_pattern(b"alse") => Some(Token::Boolean(false)),
-            b'n' if self.reader.match_pattern(b"ull") => Some(Token::Null),
-            // Handle numbers, errors, etc.
-            _ => None,
         }
+        None
     }
 }
 
