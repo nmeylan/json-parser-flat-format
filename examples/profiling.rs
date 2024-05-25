@@ -7,6 +7,8 @@ use json_flat_parser::{JSONParser, ParseOptions};
 // 19500 - 4500: swar for consume_string_until_end_of_array and consume_string_until_end_of_object
 // 17430 - 4200: Remove skip whitespace usage
 // 16275 - 4000: concat_route improvement
+// 16275 - 4000: swar for text between ""
+
 fn main() {
     // run: unzip skill-test.zip skill-test.json
 

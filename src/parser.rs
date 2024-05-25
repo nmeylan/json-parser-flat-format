@@ -297,7 +297,7 @@ mod tests {
         {
               "id": 1,
               "maxLevel": 99,
-              "name": "NV_BASIC",
+              "name": "NV_BAS\IC\"",
               "aaa": true
             }"#;
 
@@ -311,7 +311,7 @@ mod tests {
         assert_eq!(vec[1].1, Some("99".to_string()));
         assert_eq!(vec[2].0.pointer, "/name");
         assert_eq!(vec[2].0.value_type, ValueType::String);
-        assert_eq!(vec[2].1, Some("NV_BASIC".to_string()));
+        assert_eq!(vec[2].1, Some("NV_BAS\\IC\\\"".to_string()));
         assert_eq!(vec[3].0.pointer, "/aaa");
         assert_eq!(vec[3].0.value_type, ValueType::Bool);
         assert_eq!(vec[3].1, Some("true".to_string()));
