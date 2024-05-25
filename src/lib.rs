@@ -2,6 +2,7 @@ use std::fmt::{Display};
 use std::hash::{Hash, Hasher};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::serializer::{serialize_to_json, Value};
 
 pub mod parser;
 pub mod lexer;
@@ -258,6 +259,10 @@ impl<'a> JSONParser<'a> {
             }
         }
         res
+    }
+
+    pub fn serialize(mut data: FlatJsonValue) -> Value {
+        serialize_to_json(data)
     }
 }
 

@@ -19,7 +19,7 @@ pub enum Value {
     Null,
 }
 
-fn serialize_to_json(mut data: FlatJsonValue) -> Value {
+pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
     let mut root = Value::Object(new_map());
     let mut root_array = Value::Array(Vec::with_capacity(128));
 
@@ -36,7 +36,7 @@ fn serialize_to_json(mut data: FlatJsonValue) -> Value {
     let mut current_parent = &mut root;
     for i in 0..sorted_data.len() {
         let (key, value) = sorted_data.pop().unwrap();
-        println!("{:?}", key);
+
         if key.pointer == "" && matches!(key.value_type, ValueType::Array(_)) {
             root_is_obj = false;
             current_parent = &mut root_array;
@@ -162,7 +162,7 @@ fn value_to_json(value: Option<String>, value_type: &ValueType) -> Value {
 }
 
 impl Value {
-    fn to_json(&self) -> String {
+    pub fn to_json(&self) -> String {
         self._to_json(1)
     }
     fn _to_json(&self, depth: usize) -> String {
