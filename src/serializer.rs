@@ -37,7 +37,7 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
     for i in 0..sorted_data.len() {
         let (key, value) = sorted_data.pop().unwrap();
 
-        if key.pointer == "" && matches!(key.value_type, ValueType::Array(_)) {
+        if key.pointer.is_empty() && matches!(key.value_type, ValueType::Array(_)) {
             root_is_obj = false;
             current_parent = &mut root_array;
             continue;
@@ -47,15 +47,15 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
             match current_parent {
                 Value::Object(obj) => {
                     if matches!(key.value_type, ValueType::Object) {
-                        obj.insert(key.pointer[1..].to_string(), Value::Object(new_map()));
+                        obj.insert(key.pointer[0].to_string(), Value::Object(new_map()));
                     } else if matches!(key.value_type, ValueType::Array(_)) {
                         if let Some(value) = value {
-                            obj.insert(key.pointer[1..].to_string(), Value::ArraySerialized(value));
+                            obj.insert(key.pointer[0].to_string(), Value::ArraySerialized(value));
                         } else {
-                            obj.insert(key.pointer[1..].to_string(), Value::Array(Vec::with_capacity(128)));
+                            obj.insert(key.pointer[0].to_string(), Value::Array(Vec::with_capacity(128)));
                         }
                     } else {
-                        obj.insert(key.pointer[1..].to_string(), value_to_json(value, &key.value_type));
+                        obj.insert(key.pointer[0].to_string(), value_to_json(value, &key.value_type));
                     }
                 },
                 Value::Array(array) => {
@@ -74,29 +74,29 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                 _ => panic!("only Object is accepted for root node")
             }
         } else {
-            let segments: Vec<&str> = key.pointer.split('/').filter(|s| !s.is_empty()).collect();
+            let segments: &Vec<String> = &key.pointer;
             let mut k = "";
-            let b = &key.pointer.as_bytes()[1];
-            if *b >= 0x30 && *b <= 0x39 {
+            let b = key.pointer[0].as_bytes()[0];
+            if b >= 0x30 && b <= 0x39 {
                 current_parent = &mut root_array;
             } else {
                 current_parent = &mut root;
             }
             for j in 0..(segments.len() - 1) {
-                let s = segments[j];
+                let s = &segments[j];
                 match current_parent {
                     Value::Object(ref mut obj) => {
                         k = s;
-                        current_parent = obj.get_mut(s).expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
+                        current_parent = obj.get_mut(s).expect(format!("Expected to find parent for {}, current segment {}", key.as_string(), s).as_str());
                     }
                     Value::Array(ref mut array) => {
                         k = s;
-                        current_parent = array.get_mut(usize::from_str(k).unwrap()).expect(format!("Expected to find parent at index for {}, current segment {}", key.pointer, s).as_str());
+                        current_parent = array.get_mut(usize::from_str(k).unwrap()).expect(format!("Expected to find parent at index for {}, current segment {}", key.as_string(), s).as_str());
                     }
                     _ => panic!("only Object is accepted for root node")
                 }
             }
-            k = segments[segments.len() - 1];
+            k = &segments[segments.len() - 1];
             match current_parent {
                 Value::Object(obj) => {
                     if matches!(key.value_type, ValueType::Object) {
@@ -585,7 +585,7 @@ mod tests {
 }"#;
 
         let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
+        let res = parser.parse(ParseOptions::default().start_parse_at(vec!["skills".to_string()]).parse_array(false)).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);

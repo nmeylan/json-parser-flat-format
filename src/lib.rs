@@ -8,6 +8,36 @@ pub mod parser;
 pub mod lexer;
 mod serializer;
 
+
+#[macro_export]
+macro_rules! concat_string {
+    () => { String::with_capacity(0) };
+    ($($s:expr),+) => {{
+        use std::ops::AddAssign;
+        let mut len = 0;
+        $(len.add_assign(AsRef::<str>::as_ref(&$s).len());)+
+        let mut buf = String::with_capacity(len);
+        $(buf.push_str($s.as_ref());)+
+        buf
+    }};
+}
+
+#[macro_export]
+macro_rules! vec_matches {
+    () => {false};
+    ($v1:expr, $v2:expr) => {{
+        if $v1.len() != $v2.len() {
+            return false;
+        }
+        for i in 0..$v1.len() {
+            if !$v1[i].eq(&$v2[i]) {
+                return false
+            }
+        }
+        return true;
+    }}
+}
+
 pub struct JSONParser<'a> {
     pub parser: Parser<'a>,
 }
@@ -17,8 +47,8 @@ pub struct ParseOptions {
     pub parse_array: bool,
     pub keep_object_raw_data: bool,
     pub max_depth: u8,
-    pub start_parse_at: Option<String>,
-    pub prefix: Option<String>,
+    pub start_parse_at: Option<Vec<String>>,
+    pub prefix: Option<Vec<String>>,
 }
 
 impl Default for ParseOptions {
@@ -39,7 +69,7 @@ impl ParseOptions {
         self
     }
 
-    pub fn start_parse_at(mut self, pointer: String) -> Self {
+    pub fn start_parse_at(mut self, pointer: Vec<String>) -> Self {
         self.start_parse_at = Some(pointer);
         self
     }
@@ -47,7 +77,7 @@ impl ParseOptions {
         self.max_depth = max_depth;
         self
     }
-    pub fn prefix(mut self, prefix: String) -> Self {
+    pub fn prefix(mut self, prefix: Vec<String>) -> Self {
         self.prefix = Some(prefix);
         self
     }
@@ -72,14 +102,18 @@ impl JsonArrayEntries {
     }
 
     pub fn find_node_at(&self, pointer: &str) -> Option<&(PointerKey, Option<String>)> {
-        self.entries().iter().find(|(p, _)| p.pointer.eq(pointer))
+        let segments: Vec<&str> = pointer.split('/').filter(|s| !s.is_empty()).collect();
+        self.entries().iter().find(|(p, _)| {
+            return vec_matches!(p.pointer, segments);
+        })
     }
 }
 
 
+
 #[derive(Debug, Default, Clone)]
 pub struct PointerKey {
-    pub pointer: String,
+    pub pointer: Vec<String>,
     pub value_type: ValueType,
     pub depth: u8,    // depth of the pointed value in the json
     pub index: usize, // index in the root json array
@@ -101,31 +135,39 @@ impl Hash for PointerKey {
 }
 
 impl PointerKey {
-    pub fn parent(&self) -> &str {
-        let index = self.pointer.rfind('/').unwrap_or(0);
-        let parent_pointer = if index == 0 {
-            "/"
+    pub fn parent(&self) -> Vec<String> {
+        if self.pointer.len() > 0 {
+            let mut vec1 = self.pointer.clone();
+            vec1.pop();
+            vec1
         } else {
-            &self.pointer[0..index]
-        };
-        parent_pointer
+            vec![]
+        }
+    }
+
+    pub fn as_string(&self) -> String {
+        let mut res = String::with_capacity(32);
+        for i in 0..self.pointer.len() {
+            res.push_str("/");
+            res.push_str(self.pointer[i].as_str());
+        }
+        res
+    }
+    pub fn as_string_at_max_depth(&self, depth: usize) -> String {
+        let max = depth.min(self.pointer.len());
+
+        let mut res = String::with_capacity(32);
+        for i in 0..max {
+            res.push_str("/");
+            res.push_str(self.pointer[i].as_str());
+        }
+        res
     }
 }
 
-macro_rules! concat_string {
-    () => { String::with_capacity(0) };
-    ($($s:expr),+) => {{
-        use std::ops::AddAssign;
-        let mut len = 0;
-        $(len.add_assign(AsRef::<str>::as_ref(&$s).len());)+
-        let mut buf = String::with_capacity(len);
-        $(buf.push_str($s.as_ref());)+
-        buf
-    }};
-}
 
 impl PointerKey {
-    pub fn from_pointer(pointer: String, value_type: ValueType, depth: u8, position: usize) -> Self {
+    pub fn from_pointer(pointer: Vec<String>, value_type: ValueType, depth: u8, position: usize) -> Self {
         Self {
             pointer,
             value_type,
@@ -150,7 +192,7 @@ pub enum ValueType {
 }
 
 
-type PointerFragment = Vec<String>;
+pub type PointerFragment = Vec<String>;
 
 pub type FlatJsonValue = Vec<(PointerKey, Option<String>)>;
 
@@ -160,8 +202,8 @@ pub struct ParseResult {
     pub json: FlatJsonValue,
     pub max_json_depth: usize,
     pub parsing_max_depth: u8,
-    pub started_parsing_at: Option<String>,
-    pub parsing_prefix: Option<String>,
+    pub started_parsing_at: Option<Vec<String>>,
+    pub parsing_prefix: Option<Vec<String>>,
 }
 
 impl ParseResult {
@@ -174,19 +216,6 @@ impl ParseResult {
             parsing_prefix: self.parsing_prefix.clone(),
         }
     }
-}
-
-#[macro_export]
-macro_rules! concat_string {
-    () => { String::with_capacity(0) };
-    ($($s:expr),+) => {{
-        use std::ops::AddAssign;
-        let mut len = 0;
-        $(len.add_assign(AsRef::<str>::as_ref(&$s).len());)+
-        let mut buf = String::with_capacity(len);
-        $(buf.push_str($s.as_ref());)+
-        buf
-    }};
 }
 
 
@@ -214,7 +243,7 @@ impl<'a> JSONParser<'a> {
                             new_flat_json_structure.push((k.clone(), Some(v.clone())));
                             let lexer = Lexer::new(v.as_bytes());
                             let mut parser = Parser::new(lexer);
-                            parse_options.prefix = Some(k.pointer);
+                            parse_options.prefix = Some(k.pointer.clone());
                             let res = parser.parse(&parse_options, k.depth + 1)?;
                             new_flat_json_structure.extend(res.json);
                         }
