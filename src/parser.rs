@@ -111,8 +111,8 @@ impl<'a> Parser<'a> {
         while let Some(ref token) = self.current_token {
             if matches!(token, Token::SquareClose) {
                 if pointer_index >= 0 {
-                    let PointerKey { position, depth, .. } = target[pointer_index as usize].0;
-                    target[pointer_index as usize] = (PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(i), depth, position as usize), None);
+                    let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].0);
+                    target[pointer_index as usize] = (PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position as usize), None);
                 }
                 break;
             }
@@ -144,8 +144,8 @@ impl<'a> Parser<'a> {
                 } else {
                     if let Some(array_str) = self.lexer.consume_string_until_end_of_array() {
                         if pointer_index >= 0 {
-                            let PointerKey { position, depth, .. } = target[pointer_index as usize].0;
-                            target[pointer_index as usize] = (PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(i), depth, position as usize), Some(concat_string!("[", array_str, "]")));
+                            let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].0);
+                            target[pointer_index as usize] = (PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position as usize), Some(concat_string!("[", array_str, "]")));
                         }
                         break;
                     }
