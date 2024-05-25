@@ -20,7 +20,7 @@ fn main() {
 
     let start = Instant::now();
     let mut parser = JSONParser::new(content.as_mut_str());
-    let options = ParseOptions::default().parse_array(false).start_parse_at(vec!["/skills".to_string()]).max_depth(100);
+    let options = ParseOptions::default().parse_array(false).start_parse_at("/skills".to_string()).max_depth(100);
     let mut result = parser.parse(options.clone()).unwrap();
     let max_depth = result.max_json_depth;
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, max_depth, result.json.len());
