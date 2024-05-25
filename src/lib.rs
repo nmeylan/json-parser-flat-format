@@ -7,9 +7,6 @@ pub mod parser;
 pub mod lexer;
 mod serializer;
 
-pub(crate) type Arena = bumpalo::Bump;
-// pub(crate) type Arena = typed_arena::Arena<u8>;
-
 pub struct JSONParser<'a> {
     pub parser: Parser<'a>,
 }
@@ -60,13 +57,13 @@ impl ParseOptions {
 }
 
 #[derive(Debug, Clone)]
-pub struct JsonArrayEntries<'arena> {
-    entries: FlatJsonValue<'arena>,
+pub struct JsonArrayEntries {
+    entries: FlatJsonValue,
     index: usize,
 }
 
-impl <'arena>JsonArrayEntries<'arena> {
-    pub fn entries(&self) -> &FlatJsonValue<'arena> {
+impl JsonArrayEntries {
+    pub fn entries(&self) -> &FlatJsonValue {
         &self.entries
     }
     pub fn index(&self) -> usize {
@@ -80,29 +77,29 @@ impl <'arena>JsonArrayEntries<'arena> {
 
 
 #[derive(Debug, Default, Clone)]
-pub struct PointerKey<'arena> {
-    pub pointer: &'arena str,
+pub struct PointerKey {
+    pub pointer: String,
     pub value_type: ValueType,
     pub depth: u8,    // depth of the pointed value in the json
     pub index: usize, // index in the root json array
     pub position: usize, // position on the original json
 }
 
-impl <'arena>PartialEq<Self> for PointerKey<'arena> {
+impl PartialEq<Self> for PointerKey {
     fn eq(&self, other: &Self) -> bool {
-        self.pointer.eq(other.pointer)
+        self.pointer.eq(&other.pointer)
     }
 }
 
-impl <'arena>Eq for PointerKey<'arena> {}
+impl Eq for PointerKey {}
 
-impl <'arena>Hash for PointerKey<'arena> {
+impl Hash for PointerKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.pointer.hash(state);
     }
 }
 
-impl <'arena>PointerKey<'arena> {
+impl PointerKey {
     pub fn parent(&self) -> &str {
         let index = self.pointer.rfind('/').unwrap_or(0);
         let parent_pointer = if index == 0 {
@@ -126,8 +123,8 @@ macro_rules! concat_string {
     }};
 }
 
-impl <'arena>PointerKey<'arena> {
-    pub fn from_pointer(pointer: &'arena str, value_type: ValueType, depth: u8, position: usize) -> Self {
+impl PointerKey {
+    pub fn from_pointer(pointer: String, value_type: ValueType, depth: u8, position: usize) -> Self {
         Self {
             pointer,
             value_type,
@@ -154,19 +151,19 @@ pub enum ValueType {
 
 type PointerFragment = Vec<String>;
 
-pub type FlatJsonValue<'arena> = Vec<(PointerKey<'arena>, Option<String>)>;
+pub type FlatJsonValue = Vec<(PointerKey, Option<String>)>;
 
 
 #[derive(Clone)]
-pub struct ParseResult<'arena> {
-    pub json: FlatJsonValue<'arena>,
+pub struct ParseResult {
+    pub json: FlatJsonValue,
     pub max_json_depth: usize,
     pub parsing_max_depth: u8,
     pub started_parsing_at: Option<String>,
     pub parsing_prefix: Option<String>,
 }
 
-impl <'arena>ParseResult<'arena> {
+impl ParseResult {
     pub fn clone_except_json(&self) -> Self {
         Self {
             json: Default::default(),
@@ -199,11 +196,11 @@ impl<'a> JSONParser<'a> {
 
         Self { parser }
     }
-    pub fn parse<'arena>(&mut self, options: ParseOptions, arena: &'arena Arena) -> Result<ParseResult<'arena>, String> {
-        self.parser.parse(&options, 1, arena)
+    pub fn parse(&mut self, options: ParseOptions) -> Result<ParseResult, String> {
+        self.parser.parse(&options, 1)
     }
 
-    pub fn change_depth<'arena>(previous_parse_result: ParseResult<'arena>, mut parse_options: ParseOptions, arena: &'arena Arena) -> Result<ParseResult<'arena>, String> {
+    pub fn change_depth(previous_parse_result: ParseResult, mut parse_options: ParseOptions) -> Result<ParseResult, String> {
         if previous_parse_result.parsing_max_depth < parse_options.max_depth {
             let previous_len = previous_parse_result.json.len();
             let mut new_flat_json_structure = FlatJsonValue::with_capacity(previous_len + (parse_options.max_depth - previous_parse_result.parsing_max_depth) as usize * (previous_len / 3));
@@ -216,8 +213,8 @@ impl<'a> JSONParser<'a> {
                             new_flat_json_structure.push((k.clone(), Some(v.clone())));
                             let lexer = Lexer::new(v.as_bytes());
                             let mut parser = Parser::new(lexer);
-                            parse_options.prefix = Some(k.pointer.to_string());
-                            let res = parser.parse(&parse_options, k.depth + 1, &arena)?;
+                            parse_options.prefix = Some(k.pointer);
+                            let res = parser.parse(&parse_options, k.depth + 1)?;
                             new_flat_json_structure.extend(res.json);
                         }
                     } else {
@@ -239,7 +236,7 @@ impl<'a> JSONParser<'a> {
     }
 
 
-    pub fn filter_non_null_column<'arena>(previous_parse_result: &Vec<JsonArrayEntries<'arena>>, prefix: &str, non_null_columns: &Vec<String>) -> Vec<JsonArrayEntries<'arena>> {
+    pub fn filter_non_null_column(previous_parse_result: &Vec<JsonArrayEntries>, prefix: &str, non_null_columns: &Vec<String>) -> Vec<JsonArrayEntries> {
         let mut res: Vec<JsonArrayEntries> = Vec::with_capacity(previous_parse_result.len());
         for row in previous_parse_result {
             let mut should_add_row = true;

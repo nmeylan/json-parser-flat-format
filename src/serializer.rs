@@ -200,7 +200,6 @@ impl Value {
 #[cfg(test)]
 #[cfg(feature = "indexmap")] // to ease testing we use indexmap to have deterministic output
 mod tests {
-    use typed_arena::Arena;
     use crate::{JSONParser, ParseOptions};
     use crate::serializer::serialize_to_json;
 
@@ -223,8 +222,7 @@ mod tests {
 }"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let vec = parser.parse(ParseOptions::default(), &arena).unwrap().json;
+        let vec = parser.parse(ParseOptions::default()).unwrap().json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
     }
@@ -235,8 +233,7 @@ mod tests {
             r#"[1, 2, 3]"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let res = parser.parse(ParseOptions::default(), &arena).unwrap();
+        let res = parser.parse(ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -275,8 +272,7 @@ mod tests {
 ]"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let res = parser.parse(ParseOptions::default(), &arena).unwrap();
+        let res = parser.parse(ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -291,8 +287,7 @@ mod tests {
 ]"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let res = parser.parse(ParseOptions::default(), &arena).unwrap();
+        let res = parser.parse(ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -442,8 +437,7 @@ mod tests {
 }"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let res = parser.parse(ParseOptions::default(), &arena).unwrap();
+        let res = parser.parse(ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -591,8 +585,7 @@ mod tests {
 }"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let res = parser.parse(ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false), &arena).unwrap();
+        let res = parser.parse(ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -739,8 +732,7 @@ mod tests {
 }"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let res = parser.parse(ParseOptions::default().max_depth(1).parse_array(true), &arena).unwrap();
+        let res = parser.parse(ParseOptions::default().max_depth(1).parse_array(true)).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -888,8 +880,7 @@ mod tests {
 }"#;
 
         let mut parser = JSONParser::new(json);
-        let arena = Arena::with_capacity(64 * 1024);
-        let res = parser.parse(ParseOptions::default().max_depth(1).parse_array(false), &arena).unwrap();
+        let res = parser.parse(ParseOptions::default().max_depth(1).parse_array(false)).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);

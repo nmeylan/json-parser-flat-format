@@ -1,54 +1,87 @@
-use typed_arena::Arena;
+use std::cell::RefCell;
 
 type PointerFragment = Vec<&'static str>;
 
-fn concat_route<'a>(route: &PointerFragment, arena: &'a Arena<u8>) -> &'a str {
-    let bytes = route.iter().flat_map(|s| s.as_bytes());
-    let buffer = arena.alloc_extend(bytes.cloned());
-    unsafe { std::str::from_utf8_unchecked_mut(buffer) }
+struct MemoryPool {
+    buffer: Vec<u8>,
+    position: usize,
 }
 
-struct ParseResult<'a> {
-    res: Vec<&'a str>,
-}
-struct Parser{}
-impl Parser {
+impl MemoryPool {
+    fn new(initial_capacity: usize) -> Self {
+        Self {
+            buffer: Vec::with_capacity(initial_capacity),
+            position: 0,
+        }
+    }
 
-    fn parse<'a>(&self, arena: &'a Arena<u8>) -> ParseResult<'a> {
-        let routes = vec![
-            vec!["/home", "/user", "/profile"],
-            vec!["/settings", "/preferences"],
-            vec!["/dashboard", "/stats"],
-        ];
+    fn allocate(&mut self, size: usize) -> &mut [u8] {
+        if self.position + size > self.buffer.capacity() {
+            // Double the buffer capacity if needed
+            let new_capacity = (self.buffer.capacity() + size).max(self.buffer.capacity() * 2);
+            self.buffer.reserve(new_capacity - self.buffer.capacity());
+        }
 
-        let mut result = vec![];
-
-        for _ in 0..1000000 {
-            for route in routes.iter() {
-                result.push(concat_route(&route, arena));
+        // Ensure the buffer length matches the position
+        if self.buffer.len() < self.position + size {
+            unsafe {
+                self.buffer.set_len(self.position + size);
             }
         }
-        ParseResult {
-            res: result
-        }
+
+        let allocation = &mut self.buffer[self.position..self.position + size];
+        self.position += size;
+        allocation
+    }
+
+    fn clear(&mut self) {
+        self.position = 0;
     }
 }
 
-fn concat_route1(route: &PointerFragment) -> String {
-    let mut res = String::with_capacity(64);
-    for p in route {
-        res.push_str(p);
+struct Concatenator {
+    pool: RefCell<MemoryPool>,
+}
+
+impl Concatenator {
+    fn new(initial_capacity: usize) -> Self {
+        Self {
+            pool: RefCell::new(MemoryPool::new(initial_capacity)),
+        }
     }
-    res
+
+    fn concat_route(&self, route: &PointerFragment) -> String {
+        let mut pool = self.pool.borrow_mut();
+        pool.clear();
+
+        let total_length: usize = route.iter().map(|s| s.len()).sum();
+        let buffer = pool.allocate(total_length);
+
+        let mut current_position = 0;
+        for p in route {
+            let bytes = p.as_bytes();
+            let len = bytes.len();
+            buffer[current_position..current_position + len].copy_from_slice(bytes);
+            current_position += len;
+        }
+
+        String::from_utf8_lossy(buffer).into_owned()
+    }
 }
 
 fn main() {
-    let initial_capacity = 1024 * 1024; // Adjust based on your expected needs
-    let arena = Arena::new();
-    let parser = Parser {};
-    let result = parser.parse(&arena);
-    for r in result.res {
-        // println!("{}", r);
+    let initial_capacity = 64; // Adjust based on your expected needs
+    let concatenator = Concatenator::new(initial_capacity);
+
+    let routes = vec![
+        vec!["/home", "/user", "/profile"],
+        vec!["/settings", "/preferences"],
+        vec!["/dashboard", "/stats"],
+    ];
+
+    for route in routes {
+        let concatenated = concatenator.concat_route(&route);
+        println!("{}", concatenated);
     }
 }
 
