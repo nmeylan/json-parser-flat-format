@@ -20,14 +20,14 @@ fn main() {
 
     let start = Instant::now();
     let mut parser = JSONParser::new(content.as_mut_str());
-    let options = ParseOptions::default().parse_array(false).start_parse_at("/skills".to_string()).max_depth(100);
+    let options = ParseOptions::default().parse_array(true).keep_object_raw_data(false).max_depth(3);
     let mut result = parser.parse(options.clone()).unwrap();
     let max_depth = result.max_json_depth;
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, max_depth, result.json.len());
 
     let start = Instant::now();
     let value = JSONParser::serialize(result.json);
-    value.to_json();
+    // value.to_json();
     println!("Serialization took {}ms", start.elapsed().as_millis());
     // let mut sorted_data = result.json;
     // sorted_data.sort_by(|(a, _), (b, _)|
