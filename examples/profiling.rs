@@ -2,12 +2,17 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 use json_flat_parser::{JSONParser, ParseOptions};
+// Parse
 // dev - release
 // 22000 - 4800: initial
 // 19500 - 4500: swar for consume_string_until_end_of_array and consume_string_until_end_of_object
 // 17430 - 4200: Remove skip whitespace usage
 // 16275 - 4000: concat_route improvement
 // 16275 - 4000: swar for text between ""
+
+// Serialize
+// 6000 : initial
+// 5700 : avoid get_mut by keeping previous parent
 
 fn main() {
     // run: unzip skill-test.zip skill-test.json

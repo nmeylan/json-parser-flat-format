@@ -19,6 +19,27 @@ pub enum Value {
     Null,
 }
 
+#[macro_export]
+macro_rules! vec_matches {
+    () => {false};
+    ($v1:expr, $v2:expr) => {
+        if $v1.len() != $v2.len() {
+            false
+        } else {
+            let mut matches = true;
+            for i in 0..$v1.len() {
+                if !$v1[i].eq(&$v2[i]) {
+                    matches = false;
+                    break;
+                }
+            }
+            matches
+        }
+    }
+}
+
+
+
 pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
     let mut root = Value::Object(new_map());
     let mut root_array = Value::Array(Vec::with_capacity(128));
@@ -34,6 +55,7 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
         });
 
     let mut current_parent = &mut root;
+    let mut previous_parent_pointer: Vec<String> = Vec::with_capacity(10);
     for i in 0..sorted_data.len() {
         let (key, value) = sorted_data.pop().unwrap();
 
@@ -75,27 +97,46 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
             }
         } else {
             let segments: Vec<&str> = key.pointer.split('/').filter(|s| !s.is_empty()).collect();
-            let mut k = "";
-            let b = &key.pointer.as_bytes()[1];
-            if *b >= 0x30 && *b <= 0x39 {
-                current_parent = &mut root_array;
-            } else {
-                current_parent = &mut root;
-            }
-            for j in 0..(segments.len() - 1) {
-                let s = segments[j];
-                match current_parent {
-                    Value::Object(ref mut obj) => {
-                        k = s;
-                        current_parent = obj.get_mut(s).expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
-                    }
-                    Value::Array(ref mut array) => {
-                        k = s;
-                        current_parent = array.get_mut(usize::from_str(k).unwrap()).expect(format!("Expected to find parent at index for {}, current segment {}", key.pointer, s).as_str());
-                    }
-                    _ => panic!("only Object is accepted for root node")
+
+            let mut should_update_current_parent = true;
+            if segments.len() > 0 {
+                let parent_segments = &segments[0..segments.len() - 1];
+                if vec_matches!(parent_segments, previous_parent_pointer) {
+                    should_update_current_parent = false;
                 }
             }
+
+            let mut k = "";
+            if should_update_current_parent {
+                previous_parent_pointer.clear();
+                if segments.len() > 0 {
+                    for i in 0..segments.len()-1 {
+                        previous_parent_pointer.push(segments[i].to_string());
+                    }
+                } else {
+                }
+                let b = &key.pointer.as_bytes()[1];
+                if *b >= 0x30 && *b <= 0x39 {
+                    current_parent = &mut root_array;
+                } else {
+                    current_parent = &mut root;
+                }
+                for j in 0..(segments.len() - 1) {
+                    let s = segments[j];
+                    match current_parent {
+                        Value::Object(ref mut obj) => {
+                            k = s;
+                            current_parent = obj.get_mut(s).expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
+                        }
+                        Value::Array(ref mut array) => {
+                            k = s;
+                            current_parent = array.get_mut(usize::from_str(k).unwrap()).expect(format!("Expected to find parent at index for {}, current segment {}", key.pointer, s).as_str());
+                        }
+                        _ => panic!("only Object is accepted for root node")
+                    }
+                }
+            }
+
             k = segments[segments.len() - 1];
             match current_parent {
                 Value::Object(obj) => {
