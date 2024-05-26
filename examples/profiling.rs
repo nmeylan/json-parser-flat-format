@@ -13,6 +13,9 @@ use json_flat_parser::{JSONParser, ParseOptions};
 // Serialize
 // 6000 : initial
 // 5700 : avoid get_mut by keeping previous parent
+// 4100: avoid allocate too large array
+// 2300: do not create new map with default capacity
+// 1700: use better sort algorithm (unstable) with better worse case performance
 
 fn main() {
     // run: unzip skill-test.zip skill-test.json
@@ -25,7 +28,7 @@ fn main() {
 
     let start = Instant::now();
     let mut parser = JSONParser::new(content.as_mut_str());
-    let options = ParseOptions::default().parse_array(true).keep_object_raw_data(false).max_depth(3);
+    let options = ParseOptions::default().parse_array(true).keep_object_raw_data(false).max_depth(100);
     let mut result = parser.parse(options.clone()).unwrap();
     let max_depth = result.max_json_depth;
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, max_depth, result.json.len());

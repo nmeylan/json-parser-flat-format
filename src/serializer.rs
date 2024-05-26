@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
+use std::hash::BuildHasherDefault;
 use std::str::FromStr;
+use std::time::Instant;
 use crate::{FlatJsonValue, ValueType};
 
 #[cfg(feature = "indexmap")]
@@ -47,12 +49,15 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
     let mut root_is_obj = true;
 
     let mut sorted_data = data;
-    sorted_data.sort_by(|(a, _), (b, _)|
+    let start = Instant::now();
+    sorted_data.sort_unstable_by(|(a, _), (b, _)|
         // deepest values will go first, because we will iterate in reverse order from the array to pop value
         match b.depth.cmp(&a.depth) {
             Ordering::Equal => b.position.cmp(&a.position),
             cmp => cmp,
-        });
+        }
+    );
+    println!("Sort took {}ms", start.elapsed().as_millis());
 
     let mut current_parent = &mut root;
     let mut previous_parent_pointer: Vec<String> = Vec::with_capacity(10);
@@ -68,52 +73,65 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
         if key.depth == 1 {
             match current_parent {
                 Value::Object(obj) => {
-                    if matches!(key.value_type, ValueType::Object) {
-                        obj.insert(key.pointer[1..].to_string(), Value::Object(new_map()));
-                    } else if matches!(key.value_type, ValueType::Array(_)) {
-                        if let Some(value) = value {
-                            obj.insert(key.pointer[1..].to_string(), Value::ArraySerialized(value));
-                        } else {
-                            obj.insert(key.pointer[1..].to_string(), Value::Array(Vec::with_capacity(128)));
+                    match key.value_type {
+                        ValueType::Object => { obj.insert(key.pointer[1..].to_owned(), Value::Object(new_map())); }
+                        ValueType::Array(len) => {
+                            if let Some(value) = value {
+                                obj.insert(key.pointer[1..].to_owned(), Value::ArraySerialized(value));
+                            } else {
+                                obj.insert(key.pointer[1..].to_owned(), Value::Array(Vec::with_capacity(len)));
+                            }
                         }
-                    } else {
-                        obj.insert(key.pointer[1..].to_string(), value_to_json(value, &key.value_type));
+                        _ => { obj.insert(key.pointer[1..].to_owned(), value_to_json(value, &key.value_type)); }
                     }
-                },
+                }
                 Value::Array(array) => {
-                    if matches!(key.value_type, ValueType::Object) {
-                        array.push(Value::Object(new_map()));
-                    } else if matches!(key.value_type, ValueType::Array(_)) {
-                        if let Some(value) = value {
-                            array.push(Value::ArraySerialized(value));
-                        } else {
-                            array.push(Value::Array(Vec::with_capacity(128)));
+                    match key.value_type {
+                        ValueType::Object => { array.push(Value::Object(new_map())); }
+                        ValueType::Array(len) => {
+                            if let Some(value) = value {
+                                array.push(Value::ArraySerialized(value));
+                            } else {
+                                array.push(Value::Array(Vec::with_capacity(len)));
+                            }
                         }
-                    } else {
-                        array.push(value_to_json(value, &key.value_type));
+                        _ => { array.push(value_to_json(value, &key.value_type)); }
                     }
-                },
+                }
                 _ => panic!("only Object is accepted for root node")
             }
         } else {
-            let segments: Vec<&str> = key.pointer.split('/').filter(|s| !s.is_empty()).collect();
+            let key_pointer_iter = key.pointer.split('/').filter(|s| !s.is_empty());
+            let key_pointer_len = key_pointer_iter.clone().count();
 
             let mut should_update_current_parent = true;
-            if segments.len() > 0 {
-                let parent_segments = &segments[0..segments.len() - 1];
-                if vec_matches!(parent_segments, previous_parent_pointer) {
-                    should_update_current_parent = false;
-                }
+            if key_pointer_len > 0 {
+                should_update_current_parent = if previous_parent_pointer.len() != key_pointer_len - 1 {
+                    true
+                } else {
+                    let mut matches = true;
+                    for (i, s) in key_pointer_iter.clone().enumerate() {
+                        if i == key_pointer_len - 1 {
+                            break;
+                        }
+                        if !previous_parent_pointer[i].eq(s) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    !matches
+                };
             }
 
-            let mut k = "";
             if should_update_current_parent {
                 previous_parent_pointer.clear();
-                if segments.len() > 0 {
-                    for i in 0..segments.len()-1 {
-                        previous_parent_pointer.push(segments[i].to_string());
+                if key_pointer_len > 0 {
+                    for (i, s) in key_pointer_iter.clone().enumerate() {
+                        if i == key_pointer_len - 1 {
+                            break;
+                        }
+                        previous_parent_pointer.push(s.to_owned());
                     }
-                } else {
                 }
                 let b = &key.pointer.as_bytes()[1];
                 if *b >= 0x30 && *b <= 0x39 {
@@ -121,48 +139,52 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                 } else {
                     current_parent = &mut root;
                 }
-                for j in 0..(segments.len() - 1) {
-                    let s = segments[j];
+                for (i, s) in key_pointer_iter.clone().enumerate() {
+                    if i == key_pointer_len - 1 {
+                        break;
+                    }
                     match current_parent {
                         Value::Object(ref mut obj) => {
-                            k = s;
-                            current_parent = obj.get_mut(s).expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
+                            current_parent = obj.get_mut(s)
+                                .unwrap();
+                            // .expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
                         }
                         Value::Array(ref mut array) => {
-                            k = s;
-                            current_parent = array.get_mut(usize::from_str(k).unwrap()).expect(format!("Expected to find parent at index for {}, current segment {}", key.pointer, s).as_str());
+                            current_parent = array.get_mut(usize::from_str(s).unwrap())
+                                .unwrap();
+                            // .expect(format!("Expected to find parent at index for {}, current segment {}", key.pointer, s).as_str());
                         }
                         _ => panic!("only Object is accepted for root node")
                     }
                 }
             }
 
-            k = segments[segments.len() - 1];
+            let k = key_pointer_iter.last().unwrap();
             match current_parent {
                 Value::Object(obj) => {
-                    if matches!(key.value_type, ValueType::Object) {
-                        obj.insert(k.to_string(), Value::Object(new_map()));
-                    } else if matches!(key.value_type, ValueType::Array(_)) {
-                        if let Some(value) = value {
-                            obj.insert(k.to_string(), Value::ArraySerialized(value));
-                        } else {
-                            obj.insert(k.to_string(), Value::Array(Vec::with_capacity(128)));
+                    match key.value_type {
+                        ValueType::Object => { obj.insert(k.to_owned(), Value::Object(new_map())); }
+                        ValueType::Array(len) => {
+                            if let Some(value) = value {
+                                obj.insert(k.to_owned(), Value::ArraySerialized(value));
+                            } else {
+                                obj.insert(k.to_owned(), Value::Array(Vec::with_capacity(len)));
+                            }
                         }
-                    } else {
-                        obj.insert(k.to_string(), value_to_json(value, &key.value_type));
+                        _ => { obj.insert(k.to_owned(), value_to_json(value, &key.value_type)); }
                     }
                 }
                 Value::Array(array) => {
-                    if matches!(key.value_type, ValueType::Object) {
-                        array.push(Value::Object(new_map()));
-                    } else if matches!(key.value_type, ValueType::Array(_)) {
-                        if let Some(value) = value {
-                            array.push(Value::ArraySerialized(value));
-                        } else {
-                            array.push(Value::Array(Vec::with_capacity(128)));
+                    match key.value_type {
+                        ValueType::Object => { array.push(Value::Object(new_map())); }
+                        ValueType::Array(len) => {
+                            if let Some(value) = value {
+                                array.push(Value::ArraySerialized(value));
+                            } else {
+                                array.push(Value::Array(Vec::with_capacity(len)));
+                            }
                         }
-                    } else {
-                        array.push(value_to_json(value, &key.value_type));
+                        _ => { array.push(value_to_json(value, &key.value_type)); }
                     }
                 }
                 _ => panic!("only Object is accepted for root node")
@@ -180,10 +202,10 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
 #[inline]
 fn new_map() -> Map<String, Value> {
     #[cfg(feature = "indexmap")]{
-        indexmap::IndexMap::with_capacity(128)
+        indexmap::IndexMap::new()
     }
     #[cfg(not(feature = "indexmap"))]{
-        std::collections::HashMap::with_capacity(128)
+        std::collections::HashMap::new()
     }
 }
 
