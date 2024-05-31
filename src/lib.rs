@@ -171,6 +171,7 @@ pub struct ParseResult {
     pub parsing_max_depth: u8,
     pub started_parsing_at: Option<String>,
     pub parsing_prefix: Option<String>,
+    pub depth_after_start_at: u8,
 }
 
 impl ParseResult {
@@ -181,6 +182,7 @@ impl ParseResult {
             parsing_max_depth: self.parsing_max_depth,
             started_parsing_at: self.started_parsing_at.clone(),
             parsing_prefix: self.parsing_prefix.clone(),
+            depth_after_start_at: self.depth_after_start_at,
         }
     }
 }
@@ -210,38 +212,41 @@ impl<'a> JSONParser<'a> {
         self.parser.parse(&options, 1)
     }
 
-    pub fn change_depth(previous_parse_result: ParseResult, mut parse_options: ParseOptions) -> Result<ParseResult, String> {
-        if previous_parse_result.parsing_max_depth < parse_options.max_depth {
+    pub fn change_depth(previous_parse_result: &mut ParseResult, mut parse_options: ParseOptions) -> Result<(), String> {
+        let previous_parse_depth = previous_parse_result.parsing_max_depth;
+        previous_parse_result.parsing_max_depth = parse_options.max_depth;
+        if previous_parse_depth < parse_options.max_depth {
             let previous_len = previous_parse_result.json.len();
-            let mut new_flat_json_structure = FlatJsonValue::with_capacity(previous_len + (parse_options.max_depth - previous_parse_result.parsing_max_depth) as usize * (previous_len / 3));
-            for (k, v) in previous_parse_result.json {
-                if !matches!(k.value_type, ValueType::Object) {
-                    new_flat_json_structure.push((k, v));
-                } else {
-                    if k.depth == previous_parse_result.parsing_max_depth as u8 {
-                        if let Some(mut v) = v {
-                            new_flat_json_structure.push((k.clone(), Some(v.clone())));
+            for i in 0..previous_len {
+                let (k, v) = &previous_parse_result.json[i];
+                let  is_array= matches!(k.value_type, ValueType::Array(_));
+                let  is_object = matches!(k.value_type, ValueType::Object);
+                if is_array || is_object {
+                    if (is_object && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth)
+                    || (is_array && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth) {
+                        if let Some(ref v) = v {
                             let lexer = Lexer::new(v.as_bytes());
-                            let mut parser = Parser::new(lexer);
-                            parse_options.prefix = Some(k.pointer);
-                            let res = parser.parse(&parse_options, k.depth + 1)?;
-                            new_flat_json_structure.extend(res.json);
-                        }
-                    } else {
-                        new_flat_json_structure.push((k, v));
-                    }
+                            let mut parser = Parser::new_for_change_depth(lexer, previous_parse_result.depth_after_start_at);
+                            parse_options.prefix = Some(k.pointer.clone());
+                            let mut res = parser.parse(&parse_options, k.depth + 1)?;
 
+                            if res.json.len() > 0 {
+                                match &res.json[0].0.value_type {
+                                    ValueType::Array(size) => {
+                                        previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
+                                        res.json.swap_remove(0);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            previous_parse_result.json.extend(res.json);
+                        }
+                    }
                 }
             }
-            Ok(ParseResult {
-                json: new_flat_json_structure,
-                max_json_depth: previous_parse_result.max_json_depth,
-                parsing_max_depth: parse_options.max_depth,
-                started_parsing_at: previous_parse_result.started_parsing_at,
-                parsing_prefix: previous_parse_result.parsing_prefix,
-            })
+            Ok(())
         } else {
-            Ok(previous_parse_result)
+            Ok(())
         }
     }
 
