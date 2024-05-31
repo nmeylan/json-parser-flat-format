@@ -101,7 +101,8 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                 _ => panic!("only Object is accepted for root node")
             }
         } else {
-            let key_pointer_iter = key.pointer.split('/').filter(|s| !s.is_empty());
+            let split = key.pointer.split('/');
+            let key_pointer_iter = split.filter(|s| !s.is_empty());
             let key_pointer_len = key_pointer_iter.clone().count();
 
             let mut should_update_current_parent = true;

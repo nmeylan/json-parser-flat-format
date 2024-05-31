@@ -59,8 +59,8 @@ impl ParseOptions {
 
 #[derive(Debug, Clone)]
 pub struct JsonArrayEntries {
-    entries: FlatJsonValue,
-    index: usize,
+    pub entries: FlatJsonValue,
+    pub index: usize,
 }
 
 impl JsonArrayEntries {
