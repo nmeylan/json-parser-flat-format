@@ -7,7 +7,7 @@ pub struct Parser<'a> {
     current_token: Option<Token<'a>>,
     state_seen_start_parse_at: bool,
     pub max_depth: usize,
-    pub(crate) depth_after_start_at: u8,
+    pub depth_after_start_at: u8,
 }
 
 
