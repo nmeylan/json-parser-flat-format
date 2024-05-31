@@ -1,27 +1,27 @@
 use crate::string_from_bytes;
 
 #[derive(Debug)]
-pub enum Token<'a> {
+pub enum Token<'json> {
     CurlyOpen,
     CurlyClose,
     SquareOpen,
     SquareClose,
     Colon,
     Comma,
-    String(&'a str),
-    Number(&'a str),
-    Boolean(&'a str),
+    String(&'json str),
+    Number(&'json str),
+    Boolean(&'json str),
     Null,
 }
 
 
-pub struct SliceRead<'a> {
-    slice: &'a [u8],
+pub struct SliceRead<'json> {
+    slice: &'json [u8],
     index: usize,
 }
 
-impl<'a> SliceRead<'a> {
-    pub fn new(slice: &'a [u8]) -> Self {
+impl<'json> SliceRead<'json> {
+    pub fn new(slice: &'json [u8]) -> Self {
         SliceRead { slice, index: 0 }
     }
     #[inline]
@@ -62,7 +62,7 @@ impl<'a> SliceRead<'a> {
         }
     }
     #[inline]
-    pub fn slice_from(&self, start: usize) -> &'a [u8] {
+    pub fn slice_from(&self, start: usize) -> &'json [u8] {
         &self.slice[start..self.index]
     }
     #[inline]
@@ -81,14 +81,14 @@ impl<'a> SliceRead<'a> {
         }
     }
 
-    pub fn data(&self) -> &'a [u8] {
+    pub fn data(&self) -> &'json [u8] {
         self.slice
     }
 }
 
 
-pub struct Lexer<'a> {
-    reader: SliceRead<'a>,
+pub struct Lexer<'json> {
+    reader: SliceRead<'json>,
 }
 
 
@@ -98,14 +98,14 @@ const MASK_OPEN_SQUARE: u64 = 0x0101010101010101 * b'[' as u64;
 const MASK_CLOSE_SQUARE: u64 = 0x0101010101010101 * b']' as u64;
 const MASK_QUOTE: u64 = 0x0101010101010101 * b'"' as u64;
 
-impl<'a> Lexer<'a> {
-    pub fn new(input: &'a [u8]) -> Self {
+impl<'json> Lexer<'json> {
+    pub fn new(input: &'json [u8]) -> Self {
         Lexer {
             reader: SliceRead::new(input),
         }
     }
 
-    pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize) -> Option<&'a str> {
+    pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize) -> Option<&'json str> {
         let mut square_close_count = 1;
         while !self.reader.is_at_end() {
             let current_index = self.reader.index;
@@ -141,7 +141,7 @@ impl<'a> Lexer<'a> {
     pub fn reader_index(&self) -> usize {
         self.reader.index
     }
-    pub fn reader(&mut self) -> &SliceRead<'a> {
+    pub fn reader(&mut self) -> &SliceRead<'json> {
         &self.reader
     }
 
@@ -149,7 +149,7 @@ impl<'a> Lexer<'a> {
         self.reader.index = index;
     }
 
-    pub fn consume_string_until_end_of_object(&mut self) -> Option<&'a str> {
+    pub fn consume_string_until_end_of_object(&mut self) -> Option<&'json str> {
         let mut square_close_count = 1;
         let start = self.reader.index - 1;
         while !self.reader.is_at_end() {
@@ -185,7 +185,7 @@ impl<'a> Lexer<'a> {
         None
     }
     #[inline]
-    pub fn next_token(&mut self) -> Option<Token<'a>> {
+    pub fn next_token(&mut self) -> Option<Token<'json>> {
         loop {
             match self.reader.next()? {
                 b'{' => return Some(Token::CurlyOpen),

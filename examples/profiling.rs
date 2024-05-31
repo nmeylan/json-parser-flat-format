@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, result};
 use std::path::Path;
 use std::time::Instant;
 use json_flat_parser::{JSONParser, ParseOptions};
@@ -27,10 +27,10 @@ fn main() {
     let size = metadata1.len() / 1024 / 1024;
 
     let start = Instant::now();
-    let mut parser = JSONParser::new(content.as_mut_str());
-    let options = ParseOptions::default().parse_array(true).keep_object_raw_data(true).start_parse_at("/skills".to_string()).max_depth(5);
-    let mut result = parser.parse(options.clone()).unwrap();
-    println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, result.parsing_max_depth, result.json.len());
+
+    // let options = ParseOptions::default().parse_array(true).keep_object_raw_data(true).start_parse_at("/skills".to_string()).max_depth(1);
+    // let mut result = JSONParser::parse(content.as_mut_str(), options.clone()).unwrap();
+    // println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, result.parsing_max_depth, result.json.len());
     // let start = Instant::now();
     // JSONParser::change_depth(&mut result, options.clone().max_depth(2)).unwrap();
     // println!("Change depth to {} took {} ms, new json len {}", result.parsing_max_depth, start.elapsed().as_millis(), result.json.len());
@@ -46,22 +46,20 @@ fn main() {
     // let start = Instant::now();
     // JSONParser::change_depth(&mut result, options.clone().max_depth(6)).unwrap();
     // println!("Change depth to {} took {} ms, new json len {}", result.parsing_max_depth, start.elapsed().as_millis(), result.json.len());
-
+    //
 
     let start = Instant::now();
-    let mut parser = JSONParser::new(content.as_mut_str());
     let options = ParseOptions::default().parse_array(true).keep_object_raw_data(true).start_parse_at("/skills".to_string()).max_depth(6);
-    let mut result = parser.parse(options.clone()).unwrap();
+    let result = JSONParser::parse(content.as_mut_str(), options.clone()).unwrap();
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, result.parsing_max_depth, result.json.len());
-    // let start = Instant::now();
-    // let value = JSONParser::serialize(result.json);
-    // value.to_json();
-    // println!("Serialization took {}ms", start.elapsed().as_millis());
+    let start = Instant::now();
+    let value = JSONParser::serialize(result.json);
+    value.to_json();
+    println!("Serialization took {}ms", start.elapsed().as_millis());
     // let mut sorted_data = result.json;
     // sorted_data.sort_by(|(a, _), (b, _)|
     //     a.pointer.cmp(&b.pointer));
     // for (pointer, v) in sorted_data.iter() {
     //     println!("{} => {:?}", pointer.pointer, v)
     // }
-
 }

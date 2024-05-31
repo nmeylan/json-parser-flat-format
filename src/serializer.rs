@@ -285,10 +285,35 @@ mod tests {
   }
 }"#;
 
-        let mut parser = JSONParser::new(json);
-        let vec = parser.parse(ParseOptions::default()).unwrap().json;
+        let vec = JSONParser::parse(json,ParseOptions::default()).unwrap().json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
+    }
+    #[test]
+    fn lifetime_test() {
+        let result = {
+            let json =
+                r#"{
+  "id": 1,
+  "maxLevel": 99,
+  "name": "NV_BASIC",
+  "aaa": true,
+  "bbb": null,
+  "flags": {
+    "a": true,
+    "b": false,
+    "c": {
+      "nested": "Oui"
+    }
+  }
+}"#;
+
+             JSONParser::parse(json,ParseOptions::default()).unwrap()
+        };
+        let mut vec = result.json;
+        vec[0].1 = Some("12");
+        let value = serialize_to_json(vec);
+        println!("{:?}", value.to_json());
     }
 
     #[test]
@@ -296,8 +321,7 @@ mod tests {
         let json =
             r#"[1, 2, 3]"#;
 
-        let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default()).unwrap();
+        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -335,8 +359,7 @@ mod tests {
   }
 ]"#;
 
-        let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default()).unwrap();
+        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -350,8 +373,7 @@ mod tests {
   [6, 7, 8]
 ]"#;
 
-        let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default()).unwrap();
+        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -499,9 +521,7 @@ mod tests {
     }
   ]
 }"#;
-
-        let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default()).unwrap();
+        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -647,9 +667,7 @@ mod tests {
     }
   ]
 }"#;
-
-        let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
+        let res = JSONParser::parse(json,ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -795,8 +813,7 @@ mod tests {
   ]
 }"#;
 
-        let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default().max_depth(1).parse_array(true)).unwrap();
+        let res = JSONParser::parse(json,ParseOptions::default().max_depth(1).parse_array(true)).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
@@ -943,8 +960,7 @@ mod tests {
   ]
 }"#;
 
-        let mut parser = JSONParser::new(json);
-        let res = parser.parse(ParseOptions::default().max_depth(1).parse_array(false)).unwrap();
+        let res = JSONParser::parse(json,ParseOptions::default().max_depth(1).parse_array(false)).unwrap();
         let vec = res.json;
         let value = serialize_to_json(vec);
         assert_eq!(value.to_json(), json);
