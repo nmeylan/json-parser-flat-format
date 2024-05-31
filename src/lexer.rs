@@ -10,7 +10,7 @@ pub enum Token<'a> {
     Comma,
     String(&'a str),
     Number(&'a str),
-    Boolean(bool),
+    Boolean(&'a str),
     Null,
 }
 
@@ -105,9 +105,8 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn consume_string_until_end_of_array(&mut self) -> Option<&'a str> {
+    pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize) -> Option<&'a str> {
         let mut square_close_count = 1;
-        let start = self.reader.index - 1;
         while !self.reader.is_at_end() {
             let current_index = self.reader.index;
             let (bytes, _) = self.reader.next_u64();
@@ -128,7 +127,7 @@ impl<'a> Lexer<'a> {
                 b'[' => square_close_count += 1,
                 b']' => {
                     if square_close_count == 1 {
-                        return Some(string_from_bytes(&self.reader.slice[start..self.reader.index - 1])?);
+                        return Some(string_from_bytes(&self.reader.slice[array_start_index..self.reader.index])?);
                     } else {
                         square_close_count -= 1;
                     }
@@ -226,8 +225,8 @@ impl<'a> Lexer<'a> {
                     let s = string_from_bytes(&self.reader.slice[start..self.reader.index - 1])?;
                     return Some(Token::String(s));
                 }
-                b't' if self.reader.match_pattern(b"rue") => return Some(Token::Boolean(true)),
-                b'f' if self.reader.match_pattern(b"alse") => return Some(Token::Boolean(false)),
+                b't' if self.reader.match_pattern(b"rue") => return Some(Token::Boolean(string_from_bytes(&self.reader.slice[self.reader.index-4..self.reader.index])?)),
+                b'f' if self.reader.match_pattern(b"alse") => return Some(Token::Boolean(string_from_bytes(&self.reader.slice[self.reader.index-5..self.reader.index])?)),
                 b'n' if self.reader.match_pattern(b"ull") => return Some(Token::Null),
                 _ => {}
             }

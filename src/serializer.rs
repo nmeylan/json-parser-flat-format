@@ -10,13 +10,13 @@ type Map<K, V> = indexmap::IndexMap<K, V>;
 type Map<K, V> = std::collections::HashMap<K, V>;
 
 #[derive(Debug)]
-pub enum Value {
-    Object(Map<String, Value>),
-    ObjectSerialized(String),
-    Array(Vec<Value>),
-    ArraySerialized(String),
+pub enum Value<'a> {
+    Object(Map<String, Value<'a >>),
+    ObjectSerialized(&'a str),
+    Array(Vec<Value<'a >>),
+    ArraySerialized(&'a str),
     Number(f64),
-    String(String),
+    String(&'a str),
     Bool(bool),
     Null,
 }
@@ -201,7 +201,7 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
 }
 
 #[inline]
-fn new_map() -> Map<String, Value> {
+fn new_map<'a>() -> Map<String, Value<'a>> {
     #[cfg(feature = "indexmap")]{
         indexmap::IndexMap::new()
     }
@@ -211,7 +211,7 @@ fn new_map() -> Map<String, Value> {
 }
 
 // Helper function to convert string values to JSON values based on ValueType
-fn value_to_json(value: Option<String>, value_type: &ValueType) -> Value {
+fn value_to_json<'a>(value: Option<&'a str>, value_type: &ValueType) -> Value<'a> {
     if let Some(value) = value {
         match value_type {
             ValueType::Number => value.parse::<f64>().map(Value::Number).unwrap_or(Value::Null),
@@ -225,7 +225,7 @@ fn value_to_json(value: Option<String>, value_type: &ValueType) -> Value {
     }
 }
 
-impl Value {
+impl <'a>Value<'a> {
     pub fn to_json(&self) -> String {
         self._to_json(1)
     }

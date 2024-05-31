@@ -58,12 +58,12 @@ impl ParseOptions {
 }
 
 #[derive(Debug, Clone)]
-pub struct JsonArrayEntries {
-    pub entries: FlatJsonValue,
+pub struct JsonArrayEntries<'a> {
+    pub entries: FlatJsonValue<'a>,
     pub index: usize,
 }
 
-impl JsonArrayEntries {
+impl <'a>JsonArrayEntries<'a> {
     pub fn entries(&self) -> &FlatJsonValue {
         &self.entries
     }
@@ -71,7 +71,7 @@ impl JsonArrayEntries {
         self.index
     }
 
-    pub fn find_node_at(&self, pointer: &str) -> Option<&(PointerKey, Option<String>)> {
+    pub fn find_node_at(&'a self, pointer: &str) -> Option<&(PointerKey, Option<&'a str>)> {
         self.entries().iter().find(|(p, _)| p.pointer.eq(pointer))
     }
 }
@@ -161,12 +161,12 @@ pub enum ValueType {
 
 type PointerFragment = Vec<String>;
 
-pub type FlatJsonValue = Vec<(PointerKey, Option<String>)>;
+pub type FlatJsonValue<'a> = Vec<(PointerKey, Option<&'a str>)>;
 
 
 #[derive(Clone)]
-pub struct ParseResult {
-    pub json: FlatJsonValue,
+pub struct ParseResult<'a> {
+    pub json: FlatJsonValue<'a>,
     pub max_json_depth: usize,
     pub parsing_max_depth: u8,
     pub started_parsing_at: Option<String>,
@@ -174,7 +174,7 @@ pub struct ParseResult {
     pub depth_after_start_at: u8,
 }
 
-impl ParseResult {
+impl <'a>ParseResult<'a> {
     pub fn clone_except_json(&self) -> Self {
         Self {
             json: Default::default(),
@@ -212,46 +212,46 @@ impl<'a> JSONParser<'a> {
         self.parser.parse(&options, 1)
     }
 
-    pub fn change_depth(previous_parse_result: &mut ParseResult, mut parse_options: ParseOptions) -> Result<(), String> {
-        let previous_parse_depth = previous_parse_result.parsing_max_depth;
-        previous_parse_result.parsing_max_depth = parse_options.max_depth;
-        if previous_parse_depth < parse_options.max_depth {
-            let previous_len = previous_parse_result.json.len();
-            for i in 0..previous_len {
-                let (k, v) = &previous_parse_result.json[i];
-                let  is_array= matches!(k.value_type, ValueType::Array(_));
-                let  is_object = matches!(k.value_type, ValueType::Object);
-                if is_array || is_object {
-                    if (is_object && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth)
-                    || (is_array && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth) {
-                        if let Some(ref v) = v {
-                            let lexer = Lexer::new(v.as_bytes());
-                            let mut parser = Parser::new_for_change_depth(lexer, previous_parse_result.depth_after_start_at);
-                            parse_options.prefix = Some(k.pointer.clone());
-                            let mut res = parser.parse(&parse_options, k.depth + 1)?;
+    // pub fn change_depth(previous_parse_result: &mut ParseResult<'a>, mut parse_options: ParseOptions) -> Result<(), String> {
+    //     let previous_parse_depth = previous_parse_result.parsing_max_depth;
+    //     previous_parse_result.parsing_max_depth = parse_options.max_depth;
+    //     if previous_parse_depth < parse_options.max_depth {
+    //         let previous_len = previous_parse_result.json.len();
+    //         for i in 0..previous_len {
+    //             let (k, v) = &previous_parse_result.json[i];
+    //             let  is_array= matches!(k.value_type, ValueType::Array(_));
+    //             let  is_object = matches!(k.value_type, ValueType::Object);
+    //             if is_array || is_object {
+    //                 if (is_object && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth)
+    //                 || (is_array && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth) {
+    //                     if let Some(ref v) = v {
+    //                         let lexer = Lexer::new(v.as_bytes());
+    //                         let mut parser = Parser::new_for_change_depth(lexer, previous_parse_result.depth_after_start_at);
+    //                         parse_options.prefix = Some(k.pointer.clone());
+    //                         let mut res = parser.parse(&parse_options, k.depth + 1)?;
+    //
+    //                         if res.json.len() > 0 {
+    //                             match &res.json[0].0.value_type {
+    //                                 ValueType::Array(size) => {
+    //                                     previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
+    //                                     res.json.swap_remove(0);
+    //                                 }
+    //                                 _ => {}
+    //                             }
+    //                         }
+    //                         previous_parse_result.json.extend(res.json);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //         Ok(())
+    //     } else {
+    //         Ok(())
+    //     }
+    // }
 
-                            if res.json.len() > 0 {
-                                match &res.json[0].0.value_type {
-                                    ValueType::Array(size) => {
-                                        previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
-                                        res.json.swap_remove(0);
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            previous_parse_result.json.extend(res.json);
-                        }
-                    }
-                }
-            }
-            Ok(())
-        } else {
-            Ok(())
-        }
-    }
 
-
-    pub fn filter_non_null_column(previous_parse_result: &Vec<JsonArrayEntries>, prefix: &str, non_null_columns: &Vec<String>) -> Vec<JsonArrayEntries> {
+    pub fn filter_non_null_column(previous_parse_result: &Vec<JsonArrayEntries<'a>>, prefix: &str, non_null_columns: &Vec<String>) -> Vec<JsonArrayEntries<'a>> {
         let mut res: Vec<JsonArrayEntries> = Vec::with_capacity(previous_parse_result.len());
         for row in previous_parse_result {
             let mut should_add_row = true;
