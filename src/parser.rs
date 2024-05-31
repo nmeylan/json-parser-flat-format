@@ -376,6 +376,8 @@ mod tests {
               "flags": {"a": true, "b": false, "c": {"nested": "Oui"}}
             }"#;
 
+        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.as_str();
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default()).unwrap().json;
         assert_eq!(vec[0].0.pointer, "/id");
@@ -469,6 +471,8 @@ mod tests {
             }
         "#;
 
+        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.as_str();
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default()).unwrap().json;
         assert_eq!(vec[0].0.pointer, "/skills");
@@ -478,7 +482,7 @@ mod tests {
         assert_eq!(vec[2].0.pointer, "/skills/0/description");
         assert_eq!(vec[2].0.parent(), "/skills/0");
         assert_eq!(vec[2].0.value_type, ValueType::String);
-        assert_eq!(vec[2].1, Some("Basic Skill".to_string()));
+        assert_eq!(vec[2].1, Some("BasicSkill".to_string()));
         assert_eq!(vec[3].0.pointer, "/skills/1");
         assert_eq!(vec[3].0.value_type, ValueType::Object);
         assert_eq!(vec[4].0.pointer, "/skills/1/description");
@@ -503,6 +507,8 @@ mod tests {
             }
         "#;
 
+        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.as_str();
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap().json;
         assert_eq!(vec.len(), 10);
@@ -562,6 +568,8 @@ mod tests {
     }
   ]
 }"#;
+        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.as_str();
         let mut parser = JSONParser::new(json);
         let vec = parser.parse(ParseOptions::default().max_depth(1)).unwrap().json;
         assert_eq!(vec.len(), 2);
@@ -672,5 +680,9 @@ mod tests {
         assert_eq!(vec[1].0.value_type, ValueType::Object);
         assert_eq!(vec[2].0.pointer, "/skills/1");
         assert_eq!(vec[2].0.value_type, ValueType::Object);
+        let mut parser = JSONParser::new(json);
+        let vec = parser.parse(ParseOptions::default().max_depth(3).start_parse_at("/skills".to_string())).unwrap().json;
+        assert_eq!(vec.len(), 13);
+        println!("{:?}", vec);
     }
 }

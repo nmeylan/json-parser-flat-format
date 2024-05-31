@@ -33,10 +33,10 @@ fn main() {
     let max_depth = result.max_json_depth;
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, max_depth, result.json.len());
 
-    let start = Instant::now();
-    let value = JSONParser::serialize(result.json);
+    // let start = Instant::now();
+    // let value = JSONParser::serialize(result.json);
     // value.to_json();
-    println!("Serialization took {}ms", start.elapsed().as_millis());
+    // println!("Serialization took {}ms", start.elapsed().as_millis());
     // let mut sorted_data = result.json;
     // sorted_data.sort_by(|(a, _), (b, _)|
     //     a.pointer.cmp(&b.pointer));
