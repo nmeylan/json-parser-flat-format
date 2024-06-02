@@ -1,0 +1,14 @@
+{
+  "id": 1,
+  "maxLevel": 99,
+  "name": "NV_BASIC",
+  "aaa": true,
+  "bbb": null,
+  "flags": {
+    "a": true,
+    "b": false,
+    "c": {
+      "nested": "Oui"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 use std::mem;
-use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResult, PointerFragment, PointerKey, string_from_bytes, ValueType};
+use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResultRef, PointerFragment, PointerKey, string_from_bytes, ValueType};
 use crate::lexer::{Lexer, Token};
 
 pub struct Parser<'a, 'json> {
@@ -19,7 +19,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
         Self { lexer, current_token: None, state_seen_start_parse_at: true, max_depth: 0, depth_after_start_at }
     }
 
-    pub fn parse(&mut self, parse_option: &ParseOptions, depth: u8) -> Result<ParseResult<'json>, String> {
+    pub fn parse(&mut self, parse_option: &ParseOptions, depth: u8) -> Result<ParseResultRef<'json>, String> {
         let mut values: Vec<(PointerKey, Option<&'json str>)> = Vec::with_capacity(64);
         self.next_token();
         let mut position = 0_usize;
@@ -30,7 +30,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 let i = 0;
                 // values.push((PointerKey::from_pointer("".to_string(), ValueType::Object, depth, position), None));
                 self.process_object(&mut pointer_fragment, &mut values, depth, i, parse_option, &mut position)?;
-                return Ok(ParseResult {
+                return Ok(ParseResultRef {
                     json: values,
                     max_json_depth: self.max_depth,
                     parsing_max_depth: parse_option.max_depth,
@@ -48,7 +48,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
 
                 values.push((PointerKey::from_pointer("".to_string(), ValueType::Array(0), depth, i), None));
                 self.process_array(&mut pointer_fragment, &mut values, depth, i + 1, parse_option, &mut position, pointer_index);
-                return Ok(ParseResult {
+                return Ok(ParseResultRef {
                     json: values,
                     max_json_depth: self.max_depth,
                     parsing_max_depth: parse_option.max_depth,
