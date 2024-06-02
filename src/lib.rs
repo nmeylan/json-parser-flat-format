@@ -9,7 +9,7 @@ pub mod parser;
 pub mod lexer;
 mod serializer;
 
-pub struct JSONParser{}
+pub struct JSONParser {}
 
 #[derive(Clone)]
 pub struct ParseOptions {
@@ -62,7 +62,7 @@ pub struct JsonArrayEntries<'json> {
     pub index: usize,
 }
 
-impl <'json>JsonArrayEntries<'json> {
+impl<'json> JsonArrayEntries<'json> {
     pub fn entries(&self) -> &FlatJsonValue {
         &self.entries
     }
@@ -74,6 +74,7 @@ impl <'json>JsonArrayEntries<'json> {
         self.entries().iter().find(|(p, _)| p.pointer.eq(pointer))
     }
 }
+
 #[derive(Debug, Clone)]
 pub struct JsonArrayEntriesOwned {
     pub entries: FlatJsonValueOwned,
@@ -157,7 +158,7 @@ impl PointerKey {
             value_type,
             depth,
             index,
-            position
+            position,
         }
     }
 }
@@ -166,7 +167,7 @@ impl PointerKey {
 #[derive(Default)]
 pub enum ValueType {
     Array(usize),
-    Object,
+    Object(bool), // parsed or not
     Number,
     String,
     Bool,
@@ -202,7 +203,7 @@ pub struct ParseResultOwned {
     pub depth_after_start_at: u8,
 }
 
-impl <'json> ParseResultRef<'json> {
+impl<'json> ParseResultRef<'json> {
     pub fn clone_except_json(&self) -> Self {
         Self {
             json: Default::default(),
@@ -215,7 +216,6 @@ impl <'json> ParseResultRef<'json> {
     }
 
     pub fn to_owned(mut self) -> ParseResultOwned {
-
         let start = Instant::now();
         let mut transformed_vec: FlatJsonValueOwned = Vec::with_capacity(self.json.len());
 
@@ -234,7 +234,6 @@ impl <'json> ParseResultRef<'json> {
 }
 
 impl ParseResultOwned {
-
     pub fn clone_except_json(&self) -> Self {
         Self {
             json: Default::default(),
@@ -275,28 +274,39 @@ impl JSONParser {
             let previous_len = previous_parse_result.json.len();
             for i in 0..previous_len {
                 let (k, v) = &previous_parse_result.json[i];
-                let  is_array= matches!(k.value_type, ValueType::Array(_));
-                let  is_object = matches!(k.value_type, ValueType::Object);
-                if is_array || is_object {
-                    if (is_object && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth)
-                    || (is_array && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth) {
-                        if let Some(ref v) = v {
-                            let mut lexer = Lexer::new(v.as_bytes());
-                            let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at);
-                            parse_options.prefix = Some(k.pointer.clone());
-                            let mut res = parser.parse(&parse_options, k.depth + 1)?;
+                let mut should_parse = false;
+                let mut is_object = false;
+                match k.value_type {
+                    ValueType::Array(_) => {
+                        should_parse = true;
+                    }
+                    ValueType::Object(parsed) => {
+                        should_parse = !parsed;
+                        is_object = true;
+                    }
+                    _ => {}
+                };
+                if should_parse && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth{
+                    if let Some(ref v) = v {
+                        let mut lexer = Lexer::new(v.as_bytes());
+                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at);
+                        parse_options.prefix = Some(k.pointer.clone());
+                        let mut res = parser.parse(&parse_options, k.depth + 1)?;
 
-                            if res.json.len() > 0 {
-                                match &res.json[0].0.value_type {
-                                    ValueType::Array(size) => {
-                                        previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
-                                        res.json.swap_remove(0);
-                                    }
-                                    _ => {}
+                        if res.json.len() > 0 {
+                            match &res.json[0].0.value_type {
+                                ValueType::Array(size) => {
+                                    previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
+                                    res.json.swap_remove(0);
                                 }
+                                _ => {}
                             }
-                            previous_parse_result.json.extend(res.json);
                         }
+
+                        if is_object {
+                            previous_parse_result.json[i].0.value_type = ValueType::Object(true);
+                        }
+                        previous_parse_result.json.extend(res.json);
                     }
                 }
             }
@@ -312,28 +322,38 @@ impl JSONParser {
             let previous_len = previous_parse_result.json.len();
             for i in 0..previous_len {
                 let (k, v) = &previous_parse_result.json[i];
-                let  is_array= matches!(k.value_type, ValueType::Array(_));
-                let  is_object = matches!(k.value_type, ValueType::Object);
-                if is_array || is_object {
-                    if (is_object && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth)
-                    || (is_array && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth) {
-                        if let Some(ref v) = v {
-                            let mut lexer = Lexer::new(v.as_bytes());
-                            let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at);
-                            parse_options.prefix = Some(k.pointer.clone());
-                            let mut res = parser.parse(&parse_options, k.depth + 1)?.to_owned();
+                let mut should_parse = false;
+                let mut is_object = false;
+                match k.value_type {
+                    ValueType::Array(_) => {
+                        should_parse = true;
+                    }
+                    ValueType::Object(parsed) => {
+                        should_parse = !parsed;
+                        is_object = true;
+                    }
+                    _ => {}
+                };
+                if should_parse && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth{
+                    if let Some(ref v) = v {
+                        let mut lexer = Lexer::new(v.as_bytes());
+                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at);
+                        parse_options.prefix = Some(k.pointer.clone());
+                        let mut res = parser.parse(&parse_options, k.depth + 1)?.to_owned();
 
-                            if res.json.len() > 0 {
-                                match &res.json[0].0.value_type {
-                                    ValueType::Array(size) => {
-                                        previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
-                                        res.json.swap_remove(0);
-                                    }
-                                    _ => {}
+                        if res.json.len() > 0 {
+                            match &res.json[0].0.value_type {
+                                ValueType::Array(size) => {
+                                    previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
+                                    res.json.swap_remove(0);
                                 }
+                                _ => {}
                             }
-                            previous_parse_result.json.extend(res.json);
                         }
+                        if is_object {
+                            previous_parse_result.json[i].0.value_type = ValueType::Object(true);
+                        }
+                        previous_parse_result.json.extend(res.json);
                     }
                 }
             }

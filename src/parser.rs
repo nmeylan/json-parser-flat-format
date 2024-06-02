@@ -179,9 +179,9 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         if let Some(object_str) = self.lexer.consume_string_until_end_of_object() {
                             *position += 1;
                             if parse_option.keep_object_raw_data || depth - self.depth_after_start_at == parse_option.max_depth as u8 {
-                                target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object, depth, *position), Some(object_str)));
+                                target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(depth - self.depth_after_start_at < parse_option.max_depth), depth, *position), Some(object_str)));
                             } else {
-                                target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object, depth, *position), None));
+                                target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(true), depth, *position), None));
                             }
                             self.lexer.set_reader_index(start);
                             self.process_object(route, target, depth + 1, count, parse_option, position);
@@ -330,32 +330,32 @@ mod tests {
         let vec = &result1.json;
         assert_eq!(vec.len(), 1);
         assert_eq!(vec[0].0.pointer, "/nested");
-        assert_eq!(vec[0].0.value_type, ValueType::Object);
+        assert_eq!(vec[0].0.value_type, ValueType::Object(false));
         assert_eq!(vec[0].1, Some("{\"a1\": \"a\",\"b\": {\"a2\": \"a\",\"c\": {\"a3\": \"a\"}}}"));
         let result2 = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap();
 
         let vec = &result2.json;
         assert_eq!(vec.len(), 3);
         assert_eq!(vec[0].0.pointer, "/nested");
-        assert_eq!(vec[0].0.value_type, ValueType::Object);
+        assert_eq!(vec[0].0.value_type, ValueType::Object(true));
         assert_eq!(vec[0].1, Some("{\"a1\": \"a\",\"b\": {\"a2\": \"a\",\"c\": {\"a3\": \"a\"}}}"));
         assert_eq!(vec[1].0.pointer, "/nested/a1");
         assert_eq!(vec[1].0.value_type, ValueType::String);
         assert_eq!(vec[1].1, Some("a"));
         assert_eq!(vec[2].0.pointer, "/nested/b");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(false));
         assert_eq!(vec[2].1, Some("{\"a2\": \"a\",\"c\": {\"a3\": \"a\"}}"));
         JSONParser::change_depth(&mut result1, ParseOptions::default().max_depth(2)).unwrap();
         let vec = &result1.json;
         assert_eq!(vec.len(), 3);
         assert_eq!(vec[0].0.pointer, "/nested");
-        assert_eq!(vec[0].0.value_type, ValueType::Object);
+        assert_eq!(vec[0].0.value_type, ValueType::Object(true));
         assert_eq!(vec[0].1, Some("{\"a1\": \"a\",\"b\": {\"a2\": \"a\",\"c\": {\"a3\": \"a\"}}}"));
         assert_eq!(vec[1].0.pointer, "/nested/a1");
         assert_eq!(vec[1].0.value_type, ValueType::String);
         assert_eq!(vec[1].1, Some("a"));
         assert_eq!(vec[2].0.pointer, "/nested/b");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(false));
         assert_eq!(vec[2].1, Some("{\"a2\": \"a\",\"c\": {\"a3\": \"a\"}}"));
     }
 
@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(vec[3].0.value_type, ValueType::Bool);
         assert_eq!(vec[3].1, Some("true"));
         assert_eq!(vec[4].0.pointer, "/flags");
-        assert_eq!(vec[4].0.value_type, ValueType::Object);
+        assert_eq!(vec[4].0.value_type, ValueType::Object(true));
         assert_eq!(vec[5].0.pointer, "/flags/a");
         assert_eq!(vec[5].0.value_type, ValueType::Bool);
         assert_eq!(vec[5].1, Some("true"));
@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(vec[6].0.value_type, ValueType::Bool);
         assert_eq!(vec[6].1, Some("false"));
         assert_eq!(vec[7].0.pointer, "/flags/c");
-        assert_eq!(vec[7].0.value_type, ValueType::Object);
+        assert_eq!(vec[7].0.value_type, ValueType::Object(true));
         assert_eq!(vec[8].0.pointer, "/flags/c/nested");
         assert_eq!(vec[8].0.value_type, ValueType::String);
         assert_eq!(vec[8].1, Some("Oui"));
@@ -481,18 +481,18 @@ mod tests {
         assert_eq!(vec[0].0.pointer, "/skills");
         assert_eq!(vec[0].0.value_type, ValueType::Array(3));
         assert_eq!(vec[1].0.pointer, "/skills/0");
-        assert_eq!(vec[1].0.value_type, ValueType::Object);
+        assert_eq!(vec[1].0.value_type, ValueType::Object(true));
         assert_eq!(vec[2].0.pointer, "/skills/0/description");
         assert_eq!(vec[2].0.parent(), "/skills/0");
         assert_eq!(vec[2].0.value_type, ValueType::String);
         assert_eq!(vec[2].1, Some("BasicSkill"));
         assert_eq!(vec[3].0.pointer, "/skills/1");
-        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].0.value_type, ValueType::Object(true));
         assert_eq!(vec[4].0.pointer, "/skills/1/description");
         assert_eq!(vec[4].0.value_type, ValueType::String);
         assert_eq!(vec[4].1, Some("Heal"));
         assert_eq!(vec[5].0.pointer, "/skills/2");
-        assert_eq!(vec[5].0.value_type, ValueType::Object);
+        assert_eq!(vec[5].0.value_type, ValueType::Object(true));
         assert_eq!(vec[6].0.pointer, "/skills/2/description");
         assert_eq!(vec[6].0.value_type, ValueType::String);
         assert_eq!(vec[6].1, Some("Bash"));
@@ -518,7 +518,7 @@ mod tests {
         assert_eq!(vec[0].0.pointer, "/skills");
         assert_eq!(vec[0].0.value_type, ValueType::Array(3));
         assert_eq!(vec[1].0.pointer, "/skills/0");
-        assert_eq!(vec[1].0.value_type, ValueType::Object);
+        assert_eq!(vec[1].0.value_type, ValueType::Object(true));
         assert_eq!(vec[2].0.pointer, "/skills/0/description");
         assert_eq!(vec[2].0.value_type, ValueType::String);
         assert_eq!(vec[3].0.pointer, "/skills/0/inner");
@@ -590,10 +590,10 @@ mod tests {
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(2));
         assert_eq!(vec[2].0.pointer, "/skills/1"); // there is a swap remove
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
         assert_eq!(vec[3].0.pointer, "/skills/0");
-        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
 
         
@@ -604,10 +604,10 @@ mod tests {
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(2));
         assert_eq!(vec[2].0.pointer, "/skills/0");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
         assert_eq!(vec[3].0.pointer, "/skills/1");
-        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
 
         // 
@@ -620,7 +620,7 @@ mod tests {
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(2));
         assert_eq!(vec[2].0.pointer, "/skills/0");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(true));
         assert_eq!(vec[2].1.is_some(), true);
         assert_eq!(vec[4].0.pointer, "/skills/0/description");
         assert_eq!(vec[4].0.value_type, ValueType::String);
@@ -629,7 +629,7 @@ mod tests {
         assert_eq!(vec[6].0.pointer, "/skills/0/name");
         assert_eq!(vec[6].0.value_type, ValueType::String);
         assert_eq!(vec[3].0.pointer, "/skills/1");
-        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].0.value_type, ValueType::Object(true));
         assert_eq!(vec[3].1.is_some(), true);
         assert_eq!(vec[7].0.pointer, "/skills/1/description");
         assert_eq!(vec[7].0.value_type, ValueType::String);
@@ -650,7 +650,7 @@ mod tests {
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(2));
         assert_eq!(vec[2].0.pointer, "/skills/0");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(true));
         assert_eq!(vec[2].1.is_some(), true);
         assert_eq!(vec[3].0.pointer, "/skills/0/description");
         assert_eq!(vec[3].0.value_type, ValueType::String);
@@ -659,7 +659,7 @@ mod tests {
         assert_eq!(vec[5].0.pointer, "/skills/0/name");
         assert_eq!(vec[5].0.value_type, ValueType::String);
         assert_eq!(vec[6].0.pointer, "/skills/1");
-        assert_eq!(vec[6].0.value_type, ValueType::Object);
+        assert_eq!(vec[6].0.value_type, ValueType::Object(true));
         assert_eq!(vec[6].1.is_some(), true);
         assert_eq!(vec[7].0.pointer, "/skills/1/description");
         assert_eq!(vec[7].0.value_type, ValueType::String);
@@ -687,10 +687,10 @@ mod tests {
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(2));
         assert_eq!(vec[2].0.pointer, "/skills/0");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
         assert_eq!(vec[3].0.pointer, "/skills/1");
-        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
         
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3).keep_object_raw_data(false)).unwrap().json;
@@ -700,7 +700,7 @@ mod tests {
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(2));
         assert_eq!(vec[2].0.pointer, "/skills/0");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(true));
         assert_eq!(vec[2].1.is_some(), false);
         assert_eq!(vec[3].0.pointer, "/skills/0/description");
         assert_eq!(vec[3].0.value_type, ValueType::String);
@@ -709,7 +709,7 @@ mod tests {
         assert_eq!(vec[5].0.pointer, "/skills/0/name");
         assert_eq!(vec[5].0.value_type, ValueType::String);
         assert_eq!(vec[6].0.pointer, "/skills/1");
-        assert_eq!(vec[6].0.value_type, ValueType::Object);
+        assert_eq!(vec[6].0.value_type, ValueType::Object(true));
         assert_eq!(vec[6].1.is_some(), false);
         assert_eq!(vec[7].0.pointer, "/skills/1/description");
         assert_eq!(vec[7].0.value_type, ValueType::String);
@@ -729,9 +729,9 @@ mod tests {
         assert_eq!(vec[0].0.pointer, "/skills");
         assert_eq!(vec[0].0.value_type, ValueType::Array(2));
         assert_eq!(vec[1].0.pointer, "/skills/0");
-        assert_eq!(vec[1].0.value_type, ValueType::Object);
+        assert_eq!(vec[1].0.value_type, ValueType::Object(false));
         assert_eq!(vec[2].0.pointer, "/skills/1");
-        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].0.value_type, ValueType::Object(false));
         
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3).start_parse_at("/skills".to_string())).unwrap().json;
         assert_eq!(vec.len(), 13);
