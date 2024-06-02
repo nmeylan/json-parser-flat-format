@@ -581,20 +581,20 @@ mod tests {
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(1));
         // 
-        // let mut res = JSONParser::parse(json, ParseOptions::default().max_depth(1)).unwrap();
-        // JSONParser::change_depth(&mut res, ParseOptions::default().max_depth(2)).unwrap();
-        // let vec = res.json;
-        // assert_eq!(vec.len(), 4);
-        // assert_eq!(vec[0].0.pointer, "/aaa");
-        // assert_eq!(vec[0].0.value_type, ValueType::Number);
-        // assert_eq!(vec[1].0.pointer, "/skills");
-        // assert_eq!(vec[1].0.value_type, ValueType::Array(2));
-        // assert_eq!(vec[2].0.pointer, "/skills/1"); // there is a swap remove
-        // assert_eq!(vec[2].0.value_type, ValueType::Object);
-        // assert_eq!(vec[3].1.is_some(), true);
-        // assert_eq!(vec[3].0.pointer, "/skills/0");
-        // assert_eq!(vec[3].0.value_type, ValueType::Object);
-        // assert_eq!(vec[3].1.is_some(), true);
+        let mut res = JSONParser::parse(json, ParseOptions::default().max_depth(1)).unwrap();
+        JSONParser::change_depth(&mut res, ParseOptions::default().max_depth(2)).unwrap();
+        let vec = res.json;
+        assert_eq!(vec.len(), 4);
+        assert_eq!(vec[0].0.pointer, "/aaa");
+        assert_eq!(vec[0].0.value_type, ValueType::Number);
+        assert_eq!(vec[1].0.pointer, "/skills");
+        assert_eq!(vec[1].0.value_type, ValueType::Array(2));
+        assert_eq!(vec[2].0.pointer, "/skills/1"); // there is a swap remove
+        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].1.is_some(), true);
+        assert_eq!(vec[3].0.pointer, "/skills/0");
+        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].1.is_some(), true);
 
         
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap().json;
@@ -611,36 +611,36 @@ mod tests {
         assert_eq!(vec[3].1.is_some(), true);
 
         // 
-        // let mut res = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap();
-        // JSONParser::change_depth(&mut res, ParseOptions::default().max_depth(3)).unwrap();
-        // let vec = res.json;
-        // assert_eq!(vec.len(), 12);
-        // assert_eq!(vec[0].0.pointer, "/aaa");
-        // assert_eq!(vec[0].0.value_type, ValueType::Number);
-        // assert_eq!(vec[1].0.pointer, "/skills");
-        // assert_eq!(vec[1].0.value_type, ValueType::Array(2));
-        // assert_eq!(vec[2].0.pointer, "/skills/0");
-        // assert_eq!(vec[2].0.value_type, ValueType::Object);
-        // assert_eq!(vec[2].1.is_some(), true);
-        // assert_eq!(vec[4].0.pointer, "/skills/0/description");
-        // assert_eq!(vec[4].0.value_type, ValueType::String);
-        // assert_eq!(vec[5].0.pointer, "/skills/0/id");
-        // assert_eq!(vec[5].0.value_type, ValueType::Number);
-        // assert_eq!(vec[6].0.pointer, "/skills/0/name");
-        // assert_eq!(vec[6].0.value_type, ValueType::String);
-        // assert_eq!(vec[3].0.pointer, "/skills/1");
-        // assert_eq!(vec[3].0.value_type, ValueType::Object);
-        // assert_eq!(vec[3].1.is_some(), true);
-        // assert_eq!(vec[7].0.pointer, "/skills/1/description");
-        // assert_eq!(vec[7].0.value_type, ValueType::String);
-        // assert_eq!(vec[8].0.pointer, "/skills/1/id");
-        // assert_eq!(vec[8].0.value_type, ValueType::Number);
-        // assert_eq!(vec[9].0.pointer, "/skills/1/name");
-        // assert_eq!(vec[9].0.value_type, ValueType::String);
-        // assert_eq!(vec[10].0.pointer, "/skills/1/basicSkillPerLevel");
-        // assert_eq!(vec[10].0.value_type, ValueType::Array(1));
-        // assert_eq!(vec[11].0.pointer, "/skills/1/bonusToSelf");
-        // assert_eq!(vec[11].0.value_type, ValueType::Array(1));
+        let mut res = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap();
+        JSONParser::change_depth(&mut res, ParseOptions::default().max_depth(3)).unwrap();
+        let vec = res.json;
+        assert_eq!(vec.len(), 12);
+        assert_eq!(vec[0].0.pointer, "/aaa");
+        assert_eq!(vec[0].0.value_type, ValueType::Number);
+        assert_eq!(vec[1].0.pointer, "/skills");
+        assert_eq!(vec[1].0.value_type, ValueType::Array(2));
+        assert_eq!(vec[2].0.pointer, "/skills/0");
+        assert_eq!(vec[2].0.value_type, ValueType::Object);
+        assert_eq!(vec[2].1.is_some(), true);
+        assert_eq!(vec[4].0.pointer, "/skills/0/description");
+        assert_eq!(vec[4].0.value_type, ValueType::String);
+        assert_eq!(vec[5].0.pointer, "/skills/0/id");
+        assert_eq!(vec[5].0.value_type, ValueType::Number);
+        assert_eq!(vec[6].0.pointer, "/skills/0/name");
+        assert_eq!(vec[6].0.value_type, ValueType::String);
+        assert_eq!(vec[3].0.pointer, "/skills/1");
+        assert_eq!(vec[3].0.value_type, ValueType::Object);
+        assert_eq!(vec[3].1.is_some(), true);
+        assert_eq!(vec[7].0.pointer, "/skills/1/description");
+        assert_eq!(vec[7].0.value_type, ValueType::String);
+        assert_eq!(vec[8].0.pointer, "/skills/1/id");
+        assert_eq!(vec[8].0.value_type, ValueType::Number);
+        assert_eq!(vec[9].0.pointer, "/skills/1/name");
+        assert_eq!(vec[9].0.value_type, ValueType::String);
+        assert_eq!(vec[10].0.pointer, "/skills/1/basicSkillPerLevel");
+        assert_eq!(vec[10].0.value_type, ValueType::Array(1));
+        assert_eq!(vec[11].0.pointer, "/skills/1/bonusToSelf");
+        assert_eq!(vec[11].0.value_type, ValueType::Array(1));
 
         
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3)).unwrap().json;
@@ -737,11 +737,11 @@ mod tests {
         assert_eq!(vec.len(), 13);
         println!("{:?}", vec);
 
-        // 
-        // let mut res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(1)).unwrap();
-        // JSONParser::change_depth(&mut res, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(3)).unwrap();
-        // let vec = res.json;
-        // println!("{:?}", vec);
-        // assert_eq!(vec.len(), 13);
+
+        let mut res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(1)).unwrap();
+        JSONParser::change_depth(&mut res, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(3)).unwrap();
+        let vec = res.json;
+        println!("{:?}", vec);
+        assert_eq!(vec.len(), 13);
     }
 }
