@@ -149,7 +149,7 @@ impl<'json> Lexer<'json> {
         self.reader.index = index;
     }
 
-    pub fn consume_string_until_end_of_object(&mut self) -> Option<&'json str> {
+    pub fn consume_string_until_end_of_object(&mut self, should_return: bool) -> Option<&'json str> {
         let mut square_close_count = 1;
         let start = self.reader.index - 1;
         while !self.reader.is_at_end() {
@@ -173,8 +173,12 @@ impl<'json> Lexer<'json> {
                 b'{' => square_close_count += 1,
                 b'}' => {
                     if square_close_count == 1 {
-                        let value = string_from_bytes(&self.reader.slice[start..self.reader.index])?;
-                        return Some(value);
+                        if should_return {
+                            let value = string_from_bytes(&self.reader.slice[start..self.reader.index])?;
+                            return Some(value);
+                        } else {
+                            break;
+                        }
                     } else {
                         square_close_count -= 1;
                     }

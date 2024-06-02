@@ -176,7 +176,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 Token::CurlyOpen => {
                     if depth - self.depth_after_start_at <= parse_option.max_depth as u8 {
                         let start = self.lexer.reader_index();
-                        if let Some(object_str) = self.lexer.consume_string_until_end_of_object() {
+                        if let Some(object_str) = self.lexer.consume_string_until_end_of_object(true) {
                             *position += 1;
                             if parse_option.keep_object_raw_data || depth - self.depth_after_start_at == parse_option.max_depth as u8 {
                                 target.push((PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(depth - self.depth_after_start_at < parse_option.max_depth), depth, *position), Some(object_str)));
@@ -190,7 +190,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         }
                     } else {
                         // consuming remaining token
-                        self.process_object(route, target, depth + 1, count, parse_option, position);
+                        self.lexer.consume_string_until_end_of_object(false);
+                        // self.process_object(route, target, depth + 1, count, parse_option, position);
                     }
                     Ok(())
                 }
@@ -573,14 +574,16 @@ mod tests {
 }"#;
         let json = json.replace('\n', "").replace(' ', "");
         let json = json.as_str();
-        
-        let vec = JSONParser::parse(json, ParseOptions::default().max_depth(1)).unwrap().json;
+
+        let result_ref = JSONParser::parse(json, ParseOptions::default().max_depth(1)).unwrap();
+        let vec = result_ref.json;
         assert_eq!(vec.len(), 2);
+        assert_eq!(result_ref.max_json_depth, 4);
         assert_eq!(vec[0].0.pointer, "/aaa");
         assert_eq!(vec[0].0.value_type, ValueType::Number);
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(1));
-        // 
+        //
         let mut res = JSONParser::parse(json, ParseOptions::default().max_depth(1)).unwrap();
         JSONParser::change_depth(&mut res, ParseOptions::default().max_depth(2)).unwrap();
         let vec = res.json;
