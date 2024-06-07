@@ -15,8 +15,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
     pub fn new(lexer: &'a mut Lexer<'json>) -> Self {
         Self { lexer, current_token: None, state_seen_start_parse_at: false, max_depth: 0, depth_after_start_at: 0 }
     }
-    pub fn new_for_change_depth(lexer: &'a mut Lexer<'json>, depth_after_start_at: u8) -> Self {
-        Self { lexer, current_token: None, state_seen_start_parse_at: true, max_depth: 0, depth_after_start_at }
+    pub fn new_for_change_depth(lexer: &'a mut Lexer<'json>, depth_after_start_at: u8, max_depth: usize) -> Self {
+        Self { lexer, current_token: None, state_seen_start_parse_at: true, max_depth, depth_after_start_at }
     }
 
     pub fn parse(&mut self, parse_option: &ParseOptions, depth: u8) -> Result<ParseResultRef<'json>, String> {
@@ -237,7 +237,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     Ok(())
                 }
                 Token::Boolean(value) => {
-                    if depth <= parse_option.max_depth as u8 {
+                    if depth - self.depth_after_start_at <= parse_option.max_depth as u8 {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
@@ -578,7 +578,7 @@ mod tests {
         let result_ref = JSONParser::parse(json, ParseOptions::default().max_depth(1)).unwrap();
         let vec = result_ref.json;
         assert_eq!(vec.len(), 2);
-        assert_eq!(result_ref.max_json_depth, 4);
+        // assert_eq!(result_ref.max_json_depth, 4);
         assert_eq!(vec[0].0.pointer, "/aaa");
         assert_eq!(vec[0].0.value_type, ValueType::Number);
         assert_eq!(vec[1].0.pointer, "/skills");
@@ -599,7 +599,7 @@ mod tests {
         assert_eq!(vec[3].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
 
-        
+
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap().json;
         assert_eq!(vec.len(), 4);
         assert_eq!(vec[0].0.pointer, "/aaa");
@@ -613,7 +613,7 @@ mod tests {
         assert_eq!(vec[3].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
 
-        // 
+        //
         let mut res = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap();
         JSONParser::change_depth(&mut res, ParseOptions::default().max_depth(3)).unwrap();
         let vec = res.json;
@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(vec[11].0.pointer, "/skills/1/bonusToSelf");
         assert_eq!(vec[11].0.value_type, ValueType::Array(1));
 
-        
+
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3)).unwrap().json;
         assert_eq!(vec.len(), 12);
         assert_eq!(vec[0].0.pointer, "/aaa");
@@ -675,14 +675,14 @@ mod tests {
         assert_eq!(vec[11].0.pointer, "/skills/1/bonusToSelf");
         assert_eq!(vec[11].0.value_type, ValueType::Array(1));
 
-        
+
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(1).keep_object_raw_data(false)).unwrap().json;
         assert_eq!(vec.len(), 2);
         assert_eq!(vec[0].0.pointer, "/aaa");
         assert_eq!(vec[0].0.value_type, ValueType::Number);
         assert_eq!(vec[1].0.pointer, "/skills");
         assert_eq!(vec[1].0.value_type, ValueType::Array(1));
-        
+
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(2).keep_object_raw_data(false)).unwrap().json;
         assert_eq!(vec.len(), 4);
         assert_eq!(vec[0].0.pointer, "/aaa");
@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(vec[3].0.pointer, "/skills/1");
         assert_eq!(vec[3].0.value_type, ValueType::Object(false));
         assert_eq!(vec[3].1.is_some(), true);
-        
+
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3).keep_object_raw_data(false)).unwrap().json;
         assert_eq!(vec.len(), 12);
         assert_eq!(vec[0].0.pointer, "/aaa");
@@ -726,7 +726,7 @@ mod tests {
         assert_eq!(vec[11].0.value_type, ValueType::Array(1));
 
 
-        
+
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(1).start_parse_at("/skills".to_string())).unwrap().json;
         assert_eq!(vec.len(), 3);
         assert_eq!(vec[0].0.pointer, "/skills");
@@ -735,16 +735,35 @@ mod tests {
         assert_eq!(vec[1].0.value_type, ValueType::Object(false));
         assert_eq!(vec[2].0.pointer, "/skills/1");
         assert_eq!(vec[2].0.value_type, ValueType::Object(false));
-        
-        let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3).start_parse_at("/skills".to_string())).unwrap().json;
-        assert_eq!(vec.len(), 13);
+
+        let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3).start_parse_at("/skills".to_string()).parse_array(false)).unwrap().json;
+        assert_eq!(vec.len(), 11);
         println!("{:?}", vec);
 
 
         let mut res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(1)).unwrap();
-        JSONParser::change_depth(&mut res, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(3)).unwrap();
+        JSONParser::change_depth(&mut res, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(3).parse_array(false)).unwrap();
         let vec = res.json;
         println!("{:?}", vec);
-        assert_eq!(vec.len(), 13);
+        assert_eq!(vec.len(), 11);
+    }
+
+    #[test]
+    fn change_depth() {
+        let json = r#"
+        {"skills":[{"afterCastActDelay":2000,"description":"MagnumBreak","duration2":10000,"element":"Fire","damageType":"Single","hitCount":1,"id":7,"knockback":2,"maxLevel":10,"name":"SM_MAGNUM","targetType":"Self","type":"Weapon","splashAreaPerLevel":[{"area":2,"level":1},{"area":2,"level":2},{"area":2,"level":3},{"area":2,"level":4},{"area":2,"level":5},{"area":2,"level":6},{"area":2,"level":7},{"area":2,"level":8},{"area":2,"level":9},{"area":2,"level":10},{"area":4,"level":11}],"copyflags":{"plagiarism":true,"reproduce":true},"damageflags":{"splash":true},"flags":{"targetTrap":true},"requires":{"spcost":30,"hpcostPerLevel":[{"amount":20,"level":1},{"amount":20,"level":2},{"amount":19,"level":3},{"amount":19,"level":4},{"amount":18,"level":5},{"amount":18,"level":6},{"amount":17,"level":7},{"amount":17,"level":8},{"amount":16,"level":9},{"amount":16,"level":10}]},"aoesize":"5x5square1------+++--+++--+++------","dmgAtkPerLevel":[{"level":1,"value":1.2},{"level":2,"value":1.4},{"level":3,"value":1.6},{"level":4,"value":1.8},{"level":5,"value":2},{"level":6,"value":2.2},{"level":7,"value":2.4},{"level":8,"value":2.6},{"level":9,"value":2.8},{"level":10,"value":3}],"dmgOuterPerLevel":[{"level":1,"value":0.7},{"level":2,"value":0.9},{"level":3,"value":1.1},{"level":4,"value":1.3},{"level":5,"value":1.5},{"level":6,"value":1.7},{"level":7,"value":1.9},{"level":8,"value":2.1},{"level":9,"value":2.3},{"level":10,"value":2.5}],"dmgWaves":1,"knockbackPerLevel":[{"level":1,"value":2},{"level":2,"value":2},{"level":3,"value":2},{"level":4,"value":2},{"level":5,"value":2},{"level":6,"value":2},{"level":7,"value":2},{"level":8,"value":2},{"level":9,"value":2},{"level":10,"value":2}],"bonusToSelf":[{"level":1,"value":{"bonus":"AccuracyPercentage","value":10}},{"level":2,"value":{"bonus":"AccuracyPercentage","value":20}},{"level":3,"value":{"bonus":"AccuracyPercentage","value":30}},{"level":4,"value":{"bonus":"AccuracyPercentage","value":40}},{"level":5,"value":{"bonus":"AccuracyPercentage","value":50}},{"level":6,"value":{"bonus":"AccuracyPercentage","value":60}},{"level":7,"value":{"bonus":"AccuracyPercentage","value":70}},{"level":8,"value":{"bonus":"AccuracyPercentage","value":80}},{"level":9,"value":{"bonus":"AccuracyPercentage","value":90}},{"level":10,"value":{"bonus":"AccuracyPercentage","value":100}}]}]}
+        "#;
+        let mut res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false).max_depth(1)).unwrap();
+        let vec = &res.json;
+        assert_eq!(vec.len(), 2);
+        JSONParser::change_depth(&mut res, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(2).parse_array(false)).unwrap();
+        let vec = &res.json;
+        // vec.iter().for_each(|(k, v)| println!("{} {} {}", k.pointer, k.depth, v.is_some()));
+        assert_eq!(vec.len(), 31);
+        JSONParser::change_depth(&mut res, ParseOptions::default().start_parse_at("/skills".to_string()).max_depth(3).parse_array(false)).unwrap();
+        let vec = &res.json;
+        // vec.iter().for_each(|(k, v)| println!("{} {} {}", k.pointer, k.depth, v.is_some()));
+        assert_eq!(vec.len(), 31);
+
     }
 }

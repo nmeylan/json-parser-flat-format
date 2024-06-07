@@ -105,6 +105,7 @@ impl<'json> Lexer<'json> {
         }
     }
 
+    #[inline]
     pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize) -> Option<&'json str> {
         let mut square_close_count = 1;
         while !self.reader.is_at_end() {
@@ -149,6 +150,7 @@ impl<'json> Lexer<'json> {
         self.reader.index = index;
     }
 
+    #[inline]
     pub fn consume_string_until_end_of_object(&mut self, should_return: bool) -> Option<&'json str> {
         let mut square_close_count = 1;
         let start = self.reader.index - 1;

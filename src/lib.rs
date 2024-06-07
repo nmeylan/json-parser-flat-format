@@ -1,4 +1,4 @@
-use std::fmt::{Display};
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::time::Instant;
 use crate::lexer::Lexer;
@@ -269,6 +269,7 @@ impl JSONParser {
 
     pub fn change_depth<'json>(previous_parse_result: &mut ParseResultRef<'json>, mut parse_options: ParseOptions) -> Result<(), String> {
         let previous_parse_depth = previous_parse_result.parsing_max_depth;
+        let previous_max_json_depth = previous_parse_result.max_json_depth;
         previous_parse_result.parsing_max_depth = parse_options.max_depth;
         if previous_parse_depth < parse_options.max_depth {
             let previous_len = previous_parse_result.json.len();
@@ -276,22 +277,28 @@ impl JSONParser {
                 let (k, v) = &previous_parse_result.json[i];
                 let mut should_parse = false;
                 let mut is_object = false;
+                let mut new_depth = k.depth;
                 match k.value_type {
                     ValueType::Array(_) => {
-                        should_parse = true;
+                        should_parse = true && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
+                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
                     }
                     ValueType::Object(parsed) => {
-                        should_parse = !parsed;
+                        should_parse = !parsed && k.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
                         is_object = true;
+                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
                     }
                     _ => {}
                 };
-                if should_parse && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth{
+                if should_parse {
                     if let Some(ref v) = v {
                         let mut lexer = Lexer::new(v.as_bytes());
-                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at);
+                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at, previous_max_json_depth);
                         parse_options.prefix = Some(k.pointer.clone());
-                        let mut res = parser.parse(&parse_options, k.depth + 1)?;
+                        let mut res = parser.parse(&parse_options, new_depth)?;
+                        if previous_parse_result.max_json_depth < res.max_json_depth {
+                            previous_parse_result.max_json_depth = res.max_json_depth;
+                        }
 
                         if res.json.len() > 0 {
                             match &res.json[0].0.value_type {
@@ -317,6 +324,7 @@ impl JSONParser {
     }
     pub fn change_depth_owned(previous_parse_result: &mut ParseResultOwned, mut parse_options: ParseOptions) -> Result<(), String> {
         let previous_parse_depth = previous_parse_result.parsing_max_depth;
+        let previous_max_json_depth = previous_parse_result.max_json_depth;
         previous_parse_result.parsing_max_depth = parse_options.max_depth;
         if previous_parse_depth < parse_options.max_depth {
             let previous_len = previous_parse_result.json.len();
@@ -324,22 +332,28 @@ impl JSONParser {
                 let (k, v) = &previous_parse_result.json[i];
                 let mut should_parse = false;
                 let mut is_object = false;
+                let mut new_depth = k.depth;
                 match k.value_type {
                     ValueType::Array(_) => {
-                        should_parse = true;
+                        should_parse = true && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
+                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
                     }
                     ValueType::Object(parsed) => {
-                        should_parse = !parsed;
+                        should_parse = !parsed && k.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
                         is_object = true;
+                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
                     }
                     _ => {}
                 };
-                if should_parse && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth{
+                if should_parse {
                     if let Some(ref v) = v {
                         let mut lexer = Lexer::new(v.as_bytes());
-                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at);
+                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at, previous_max_json_depth);
                         parse_options.prefix = Some(k.pointer.clone());
-                        let mut res = parser.parse(&parse_options, k.depth + 1)?.to_owned();
+                        let mut res = parser.parse(&parse_options, new_depth)?.to_owned();
+                        if previous_parse_result.max_json_depth < res.max_json_depth {
+                            previous_parse_result.max_json_depth = res.max_json_depth;
+                        }
 
                         if res.json.len() > 0 {
                             match &res.json[0].0.value_type {
@@ -350,6 +364,7 @@ impl JSONParser {
                                 _ => {}
                             }
                         }
+
                         if is_object {
                             previous_parse_result.json[i].0.value_type = ValueType::Object(true);
                         }
