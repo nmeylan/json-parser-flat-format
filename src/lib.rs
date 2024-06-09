@@ -81,6 +81,13 @@ pub struct JsonArrayEntriesOwned {
     pub index: usize,
 }
 
+impl Hash for JsonArrayEntriesOwned {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.index.hash(state);
+        self.entries.len().hash(state);
+    }
+}
+
 impl JsonArrayEntriesOwned {
     pub fn entries(&self) -> &FlatJsonValueOwned {
         &self.entries
