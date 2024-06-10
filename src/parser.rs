@@ -186,7 +186,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                             self.lexer.set_reader_index(start);
                             self.process_object(route, target, depth + 1, count, parse_option, position);
                         } else {
-                            panic!("We should no go there! {}", String::from_utf8_lossy(&self.lexer.reader().data()[start..start + 1000]))
+                            panic!("We should no go there! we have not found matching closing curly {}", String::from_utf8_lossy(&self.lexer.reader().data()[start..start + 1000]))
                         }
                     } else {
                         // consuming remaining token
@@ -481,6 +481,22 @@ mod tests {
         assert_eq!(vec[2].0.value_type, ValueType::Array(1));
         assert_eq!(vec[3].0.pointer, "/2");
         assert_eq!(vec[3].0.value_type, ValueType::Array(1));
+    }
+    #[test]
+    fn array_of_object_parse_false() {
+        let json = r#"
+            [{"description": "Basic Skill"}, {"description": "Bash"}]
+        "#;
+
+
+        let vec = JSONParser::parse(json, ParseOptions::default().parse_array(false).max_depth(1)).unwrap().json;
+        println!("{:?}", vec);
+        assert_eq!(vec[0].0.pointer, "");
+        assert_eq!(vec[0].0.value_type, ValueType::Array(2));
+        assert_eq!(vec[1].0.pointer, "/0");
+        assert_eq!(vec[1].0.value_type, ValueType::Object(false));
+        assert_eq!(vec[2].0.pointer, "/1");
+        assert_eq!(vec[2].0.value_type, ValueType::Object(false));
     }
 
     #[test]
