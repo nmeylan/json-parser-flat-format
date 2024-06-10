@@ -274,6 +274,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
 
     fn should_parse_array(&mut self, route: &&mut PointerFragment, parse_option: &ParseOptions) -> bool {
         parse_option.parse_array
+            || parse_option.start_parse_at.is_none() && route.is_empty()
             // When parse_array is disable, we allow to parse array if we set a pointer from where we start parsing and this pointer is an array itself, otherwise we would not parse anything
             || (parse_option.start_parse_at.is_some() && !self.state_seen_start_parse_at && parse_option.start_parse_at.as_ref().unwrap().eq(&Self::concat_route(route)))
     }
@@ -461,6 +462,25 @@ mod tests {
         assert_eq!(vec[6].0.pointer, "/2/0");
         assert_eq!(vec[6].0.value_type, ValueType::Number);
         assert_eq!(vec[6].1, Some("3"));
+    }
+
+    #[test]
+    fn simple_array_nested_parse_false() {
+        let json = r#"
+            [[1],[2],[3]]
+        "#;
+
+
+        let vec = JSONParser::parse(json, ParseOptions::default().parse_array(false)).unwrap().json;
+        println!("{:?}", vec);
+        assert_eq!(vec[0].0.pointer, "");
+        assert_eq!(vec[0].0.value_type, ValueType::Array(3));
+        assert_eq!(vec[1].0.pointer, "/0");
+        assert_eq!(vec[1].0.value_type, ValueType::Array(1));
+        assert_eq!(vec[2].0.pointer, "/1");
+        assert_eq!(vec[2].0.value_type, ValueType::Array(1));
+        assert_eq!(vec[3].0.pointer, "/2");
+        assert_eq!(vec[3].0.value_type, ValueType::Array(1));
     }
 
     #[test]
