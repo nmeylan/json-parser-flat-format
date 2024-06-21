@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
+use std::fmt::Debug;
 use std::hash::BuildHasherDefault;
 use std::str::FromStr;
 use std::time::Instant;
-use crate::{FlatJsonValue, ValueType};
+use crate::{FlatJsonValue, GetBytes, ValueType};
 
 #[cfg(feature = "indexmap")]
 type Map<K, V> = indexmap::IndexMap<K, V>;
@@ -11,9 +12,9 @@ type Map<K, V> = std::collections::HashMap<K, V>;
 
 #[derive(Debug)]
 pub enum Value<'a> {
-    Object(Map<String, Value<'a >>),
+    Object(Map<String, Value<'a>>),
     ObjectSerialized(&'a str),
-    Array(Vec<Value<'a >>),
+    Array(Vec<Value<'a>>),
     ArraySerialized(&'a str),
     Number(f64),
     String(&'a str),
@@ -42,7 +43,7 @@ macro_rules! vec_matches {
 
 
 
-pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
+pub fn serialize_to_json<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Value<'a> {
     let mut root = Value::Object(new_map());
     let mut root_array = Value::Array(Vec::with_capacity(128));
 
@@ -50,10 +51,10 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
 
     let mut sorted_data = data;
     let start = Instant::now();
-    sorted_data.sort_unstable_by(|(a, _), (b, _)|
+    sorted_data.sort_unstable_by(|a, b|
         // deepest values will go first, because we will iterate in reverse order from the array to pop value
-        match b.depth.cmp(&a.depth) {
-            Ordering::Equal => b.position.cmp(&a.position),
+        match b.pointer.depth.cmp(&a.pointer.depth) {
+            Ordering::Equal => b.pointer.position.cmp(&a.pointer.position),
             cmp => cmp,
         }
     );
@@ -62,7 +63,9 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
     let mut current_parent = &mut root;
     let mut previous_parent_pointer: Vec<String> = Vec::with_capacity(10);
     for i in 0..sorted_data.len() {
-        let (key, value) = sorted_data.pop().unwrap();
+        let entry = sorted_data.pop().unwrap();
+        let key = entry.pointer;
+        let value = entry.value;
 
         if key.pointer == "" && matches!(key.value_type, ValueType::Array(_)) {
             root_is_obj = false;
@@ -77,7 +80,7 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                         ValueType::Object(_) => { obj.insert(key.pointer[1..].to_owned(), Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                obj.insert(key.pointer[1..].to_owned(), Value::ArraySerialized(value));
+                                obj.insert(key.pointer[1..].to_owned(), Value::ArraySerialized(value.as_ref()));
                             } else {
                                 obj.insert(key.pointer[1..].to_owned(), Value::Array(Vec::with_capacity(len)));
                             }
@@ -90,7 +93,7 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                         ValueType::Object(_) => { array.push(Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                array.push(Value::ArraySerialized(value));
+                                array.push(Value::ArraySerialized(value.as_ref()));
                             } else {
                                 array.push(Value::Array(Vec::with_capacity(len)));
                             }
@@ -167,7 +170,7 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                         ValueType::Object(_) => { obj.insert(k.to_owned(), Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                obj.insert(k.to_owned(), Value::ArraySerialized(value));
+                                obj.insert(k.to_owned(), Value::ArraySerialized(value.as_ref()));
                             } else {
                                 obj.insert(k.to_owned(), Value::Array(Vec::with_capacity(len)));
                             }
@@ -180,7 +183,7 @@ pub fn serialize_to_json(mut data: FlatJsonValue) -> Value {
                         ValueType::Object(_) => { array.push(Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                array.push(Value::ArraySerialized(value));
+                                array.push(Value::ArraySerialized(value.as_ref()));
                             } else {
                                 array.push(Value::Array(Vec::with_capacity(len)));
                             }
@@ -216,7 +219,7 @@ fn value_to_json<'a>(value: Option<&'a str>, value_type: &ValueType) -> Value<'a
         match value_type {
             ValueType::Number => value.parse::<f64>().map(Value::Number).unwrap_or(Value::Null),
             ValueType::String => Value::String(value),
-            ValueType::Bool => Value::Bool(value == "true" || value == "1"),
+            ValueType::Bool => Value::Bool(value  == "true" || value == "1"),
             ValueType::Null => Value::Null,
             _ => Value::Null, // this should not happen as arrays and objects are handled separately
         }
@@ -225,7 +228,7 @@ fn value_to_json<'a>(value: Option<&'a str>, value_type: &ValueType) -> Value<'a
     }
 }
 
-impl <'a>Value<'a> {
+impl<'a> Value<'a> {
     pub fn to_json(&self) -> String {
         self._to_json(1)
     }
@@ -285,10 +288,11 @@ mod tests {
   }
 }"#;
 
-        let vec = JSONParser::parse(json,ParseOptions::default()).unwrap().json;
-        let value = serialize_to_json(vec);
+        let mut vec = JSONParser::parse(json, ParseOptions::default()).unwrap().json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
+
     #[test]
     fn lifetime_test() {
         let result = {
@@ -308,11 +312,11 @@ mod tests {
   }
 }"#;
 
-             JSONParser::parse(json,ParseOptions::default()).unwrap()
+            JSONParser::parse(json, ParseOptions::default()).unwrap()
         };
         let mut vec = result.json;
-        vec[0].1 = Some("12");
-        let value = serialize_to_json(vec);
+        vec[0].value = Some("12");
+        let value = serialize_to_json(&mut vec);
         println!("{:?}", value.to_json());
     }
 
@@ -321,9 +325,9 @@ mod tests {
         let json =
             r#"[1, 2, 3]"#;
 
-        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
-        let vec = res.json;
-        let value = serialize_to_json(vec);
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
 
@@ -359,9 +363,9 @@ mod tests {
   }
 ]"#;
 
-        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
-        let vec = res.json;
-        let value = serialize_to_json(vec);
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
 
@@ -373,9 +377,9 @@ mod tests {
   [6, 7, 8]
 ]"#;
 
-        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
-        let vec = res.json;
-        let value = serialize_to_json(vec);
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
 
@@ -521,9 +525,9 @@ mod tests {
     }
   ]
 }"#;
-        let res = JSONParser::parse(json,ParseOptions::default()).unwrap();
-        let vec = res.json;
-        let value = serialize_to_json(vec);
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
 
@@ -667,9 +671,9 @@ mod tests {
     }
   ]
 }"#;
-        let res = JSONParser::parse(json,ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
-        let vec = res.json;
-        let value = serialize_to_json(vec);
+        let res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
 
@@ -813,9 +817,9 @@ mod tests {
   ]
 }"#;
 
-        let res = JSONParser::parse(json,ParseOptions::default().max_depth(1).parse_array(true)).unwrap();
-        let vec = res.json;
-        let value = serialize_to_json(vec);
+        let res = JSONParser::parse(json, ParseOptions::default().max_depth(1).parse_array(true)).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
 
@@ -960,9 +964,9 @@ mod tests {
   ]
 }"#;
 
-        let res = JSONParser::parse(json,ParseOptions::default().max_depth(1).parse_array(false)).unwrap();
-        let vec = res.json;
-        let value = serialize_to_json(vec);
+        let res = JSONParser::parse(json, ParseOptions::default().max_depth(1).parse_array(false)).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
 }

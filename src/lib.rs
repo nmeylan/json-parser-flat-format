@@ -1,5 +1,6 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::os::unix::ffi::OsStrExt;
 use std::time::Instant;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -62,48 +63,45 @@ impl ParseOptions {
     }
 }
 
+pub trait GetBytes {
+    fn get_bytes(&self) -> &[u8];
+}
+
+impl GetBytes for String {
+    fn get_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl GetBytes for &str {
+    fn get_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct JsonArrayEntries<'json> {
-    pub entries: FlatJsonValue<'json>,
+pub struct JsonArrayEntries<V: Debug + Clone + AsRef<str> + GetBytes> {
+    pub entries: Vec<FlatJsonValue<V>>,
     pub index: usize,
 }
 
-impl<'json> JsonArrayEntries<'json> {
-    pub fn entries(&self) -> &FlatJsonValue {
+impl<V: Debug + Clone + AsRef<str> + GetBytes> JsonArrayEntries<V> {
+    pub fn entries(&self) -> &Vec<FlatJsonValue<V>> {
         &self.entries
     }
     pub fn index(&self) -> usize {
         self.index
     }
 
-    pub fn find_node_at(&'json self, pointer: &str) -> Option<&(PointerKey, Option<&'json str>)> {
-        self.entries().iter().find(|(p, _)| p.pointer.eq(pointer))
+    pub fn find_node_at(&self, pointer: &str) -> Option<&FlatJsonValue<V>> {
+        self.entries().iter().find(|v| v.pointer.pointer.eq(pointer))
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct JsonArrayEntriesOwned {
-    pub entries: FlatJsonValueOwned,
-    pub index: usize,
-}
-
-impl Hash for JsonArrayEntriesOwned {
+impl<V: Debug + Clone + AsRef<str> + GetBytes> Hash for JsonArrayEntries<V> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.index.hash(state);
         self.entries.len().hash(state);
-    }
-}
-
-impl JsonArrayEntriesOwned {
-    pub fn entries(&self) -> &FlatJsonValueOwned {
-        &self.entries
-    }
-    pub fn index(&self) -> usize {
-        self.index
-    }
-
-    pub fn find_node_at(&self, pointer: &str) -> Option<&(PointerKey, Option<String>)> {
-        self.entries().iter().find(|(p, _)| p.pointer.eq(pointer))
     }
 }
 
@@ -154,6 +152,66 @@ macro_rules! concat_string {
         buf
     }};
 }
+macro_rules! change_depth {
+    ($($t:ty, $func:ident, $to_owned:expr),+) => {$(
+    pub fn $func<'json>(previous_parse_result: &mut ParseResult<$t>, mut parse_options: ParseOptions) -> Result<(), String> {
+        let previous_parse_depth = previous_parse_result.parsing_max_depth;
+        let previous_max_json_depth = previous_parse_result.max_json_depth;
+        previous_parse_result.parsing_max_depth = parse_options.max_depth;
+        if previous_parse_depth < parse_options.max_depth {
+            let previous_len = previous_parse_result.json.len();
+            for i in 0..previous_len {
+                let entry = &previous_parse_result.json[i];
+                let mut should_parse = false;
+                let mut is_object = false;
+                let mut new_depth = entry.pointer.depth;
+                match entry.pointer.value_type {
+                    ValueType::Array(_) => {
+                        should_parse = true && entry.pointer.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
+                        new_depth = entry.pointer.depth + 1 - previous_parse_result.depth_after_start_at;
+                    }
+                    ValueType::Object(parsed) => {
+                        should_parse = !parsed && entry.pointer.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
+                        is_object = true;
+                        new_depth = entry.pointer.depth + 1 - previous_parse_result.depth_after_start_at;
+                    }
+                    _ => {}
+                };
+                if should_parse {
+                    if let Some(ref v) = entry.value {
+                        let mut lexer = Lexer::new(v.as_bytes());
+                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at, previous_max_json_depth);
+                        parse_options.prefix = Some(entry.pointer.pointer.clone());
+                        let mut res = parser.parse(&parse_options, new_depth).unwrap();
+                        let mut res = $to_owned(res);
+                        if previous_parse_result.max_json_depth < res.max_json_depth {
+                            previous_parse_result.max_json_depth = res.max_json_depth;
+                        }
+
+                        if res.json.len() > 0 {
+                            match &res.json[0].pointer.value_type {
+                                ValueType::Array(size) => {
+                                    previous_parse_result.json[i].pointer.value_type = ValueType::Array(*size);
+                                    res.json.swap_remove(0);
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        if is_object {
+                            previous_parse_result.json[i].pointer.value_type = ValueType::Object(true);
+                        }
+                        previous_parse_result.json.extend(res.json);
+                    }
+                }
+            }
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+    )+};
+}
 
 impl PointerKey {
     pub fn from_pointer(pointer: String, value_type: ValueType, depth: u8, position: usize) -> Self {
@@ -192,13 +250,17 @@ pub enum ValueType {
 
 type PointerFragment = Vec<String>;
 
-pub type FlatJsonValue<'a> = Vec<(PointerKey, Option<&'a str>)>;
-pub type FlatJsonValueOwned = Vec<(PointerKey, Option<String>)>;
+
+#[derive(Debug, Clone)]
+pub struct FlatJsonValue<V: Debug + Clone + AsRef<str> + GetBytes> {
+    pub pointer: PointerKey,
+    pub value: Option<V>,
+}
 
 
-#[derive(Clone)]
-pub struct ParseResultRef<'json> {
-    pub json: FlatJsonValue<'json>,
+#[derive(Debug, Clone)]
+pub struct ParseResult<V: Debug + Clone + AsRef<str> + GetBytes> {
+    pub json: Vec<FlatJsonValue<V>>,
     pub max_json_depth: usize,
     pub parsing_max_depth: u8,
     pub started_parsing_at: Option<String>,
@@ -206,17 +268,7 @@ pub struct ParseResultRef<'json> {
     pub depth_after_start_at: u8,
 }
 
-#[derive(Clone)]
-pub struct ParseResultOwned {
-    pub json: FlatJsonValueOwned,
-    pub max_json_depth: usize,
-    pub parsing_max_depth: u8,
-    pub started_parsing_at: Option<String>,
-    pub parsing_prefix: Option<String>,
-    pub depth_after_start_at: u8,
-}
-
-impl<'json> ParseResultRef<'json> {
+impl ParseResult<String> {
     pub fn clone_except_json(&self) -> Self {
         Self {
             json: Default::default(),
@@ -228,14 +280,29 @@ impl<'json> ParseResultRef<'json> {
         }
     }
 
-    pub fn to_owned(mut self) -> ParseResultOwned {
-        let start = Instant::now();
-        let mut transformed_vec: FlatJsonValueOwned = Vec::with_capacity(self.json.len());
+    pub fn to_owned(mut self) -> ParseResult<String> {
+        self
+    }
 
-        for (pointer, slice) in self.json {
-            transformed_vec.push((pointer, slice.map(|s| s.to_owned())));
+}
+impl ParseResult<&str> {
+    pub fn clone_except_json(&self) -> Self {
+        Self {
+            json: Default::default(),
+            max_json_depth: self.max_json_depth,
+            parsing_max_depth: self.parsing_max_depth,
+            started_parsing_at: self.started_parsing_at.clone(),
+            parsing_prefix: self.parsing_prefix.clone(),
+            depth_after_start_at: self.depth_after_start_at,
         }
-        crate::ParseResultOwned {
+    }
+    pub fn to_owned(mut self) -> ParseResult<String> {
+        let mut transformed_vec: Vec<FlatJsonValue<String>> = Vec::with_capacity(self.json.len());
+
+        for entry in self.json {
+            transformed_vec.push(FlatJsonValue { pointer: entry.pointer, value: entry.value.map(|s| s.to_owned()) });
+        }
+        ParseResult::<String> {
             json: transformed_vec,
             max_json_depth: self.max_json_depth,
             parsing_max_depth: self.parsing_max_depth,
@@ -244,20 +311,9 @@ impl<'json> ParseResultRef<'json> {
             depth_after_start_at: self.depth_after_start_at,
         }
     }
+
 }
 
-impl ParseResultOwned {
-    pub fn clone_except_json(&self) -> Self {
-        Self {
-            json: Default::default(),
-            max_json_depth: self.max_json_depth,
-            parsing_max_depth: self.parsing_max_depth,
-            started_parsing_at: self.started_parsing_at.clone(),
-            parsing_prefix: self.parsing_prefix.clone(),
-            depth_after_start_at: self.depth_after_start_at,
-        }
-    }
-}
 
 #[macro_export]
 macro_rules! concat_string {
@@ -274,150 +330,75 @@ macro_rules! concat_string {
 
 
 impl JSONParser {
-    pub fn parse<'json>(input: &'json str, options: ParseOptions) -> Result<ParseResultRef<'json>, String> {
+    pub fn parse<'json>(input: &'json str, options: ParseOptions) -> Result<ParseResult<&'json str>, String> {
         let mut lexer = Lexer::new(input.as_bytes());
         let mut parser = Parser::new(&mut lexer);
         parser.parse(&options, options.start_depth)
     }
 
-    pub fn change_depth<'json>(previous_parse_result: &mut ParseResultRef<'json>, mut parse_options: ParseOptions) -> Result<(), String> {
-        let previous_parse_depth = previous_parse_result.parsing_max_depth;
-        let previous_max_json_depth = previous_parse_result.max_json_depth;
-        previous_parse_result.parsing_max_depth = parse_options.max_depth;
-        if previous_parse_depth < parse_options.max_depth {
-            let previous_len = previous_parse_result.json.len();
-            for i in 0..previous_len {
-                let (k, v) = &previous_parse_result.json[i];
-                let mut should_parse = false;
-                let mut is_object = false;
-                let mut new_depth = k.depth;
-                match k.value_type {
-                    ValueType::Array(_) => {
-                        should_parse = true && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
-                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
-                    }
-                    ValueType::Object(parsed) => {
-                        should_parse = !parsed && k.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
-                        is_object = true;
-                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
-                    }
-                    _ => {}
-                };
-                if should_parse {
-                    if let Some(ref v) = v {
-                        let mut lexer = Lexer::new(v.as_bytes());
-                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at, previous_max_json_depth);
-                        parse_options.prefix = Some(k.pointer.clone());
-                        let mut res = parser.parse(&parse_options, new_depth)?;
-                        if previous_parse_result.max_json_depth < res.max_json_depth {
-                            previous_parse_result.max_json_depth = res.max_json_depth;
-                        }
 
-                        if res.json.len() > 0 {
-                            match &res.json[0].0.value_type {
-                                ValueType::Array(size) => {
-                                    previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
-                                    res.json.swap_remove(0);
-                                }
-                                _ => {}
-                            }
-                        }
+    change_depth!(&'json str, change_depth, |r: ParseResult<&'json str>| r);
+    change_depth!(String, change_depth_owned, |r: ParseResult<&str>| r.to_owned());
+    // pub fn change_depth<V: Debug + Clone + AsRef<str> + GetBytes>(previous_parse_result: &mut ParseResult<V>, mut parse_options: ParseOptions) -> Result<(), String> {
+    //     let previous_parse_depth = previous_parse_result.parsing_max_depth;
+    //     let previous_max_json_depth = previous_parse_result.max_json_depth;
+    //     previous_parse_result.parsing_max_depth = parse_options.max_depth;
+    //     if previous_parse_depth < parse_options.max_depth {
+    //         let previous_len = previous_parse_result.json.len();
+    //         for i in 0..previous_len {
+    //             let entry = &previous_parse_result.json[i];
+    //             let mut should_parse = false;
+    //             let mut is_object = false;
+    //             let mut new_depth = entry.pointer.depth;
+    //             match entry.pointer.value_type {
+    //                 ValueType::Array(_) => {
+    //                     should_parse = true && entry.pointer.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
+    //                     new_depth = entry.pointer.depth + 1 - previous_parse_result.depth_after_start_at;
+    //                 }
+    //                 ValueType::Object(parsed) => {
+    //                     should_parse = !parsed && entry.pointer.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
+    //                     is_object = true;
+    //                     new_depth = entry.pointer.depth + 1 - previous_parse_result.depth_after_start_at;
+    //                 }
+    //                 _ => {}
+    //             };
+    //             if should_parse {
+    //                 if let Some(ref v) = entry.value {
+    //                     let mut lexer = Lexer::new(v.get_bytes());
+    //                     let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at, previous_max_json_depth);
+    //                     parse_options.prefix = Some(entry.pointer.pointer.clone());
+    //                     let mut res = parser.parse(&parse_options, new_depth).unwrap();
+    //                     if previous_parse_result.max_json_depth < res.max_json_depth {
+    //                         previous_parse_result.max_json_depth = res.max_json_depth;
+    //                     }
+    //
+    //                     if res.json.len() > 0 {
+    //                         match &res.json[0].pointer.value_type {
+    //                             ValueType::Array(size) => {
+    //                                 previous_parse_result.json[i].pointer.value_type = ValueType::Array(*size);
+    //                                 res.json.swap_remove(0);
+    //                             }
+    //                             _ => {}
+    //                         }
+    //                     }
+    //
+    //                     if is_object {
+    //                         previous_parse_result.json[i].pointer.value_type = ValueType::Object(true);
+    //                     }
+    //                     previous_parse_result.json.extend(res.json);
+    //                 }
+    //             }
+    //         }
+    //         Ok(())
+    //     } else {
+    //         Ok(())
+    //     }
+    // }
 
-                        if is_object {
-                            previous_parse_result.json[i].0.value_type = ValueType::Object(true);
-                        }
-                        previous_parse_result.json.extend(res.json);
-                    }
-                }
-            }
-            Ok(())
-        } else {
-            Ok(())
-        }
-    }
-    pub fn change_depth_owned(previous_parse_result: &mut ParseResultOwned, mut parse_options: ParseOptions) -> Result<(), String> {
-        let previous_parse_depth = previous_parse_result.parsing_max_depth;
-        let previous_max_json_depth = previous_parse_result.max_json_depth;
-        previous_parse_result.parsing_max_depth = parse_options.max_depth;
-        if previous_parse_depth < parse_options.max_depth {
-            let previous_len = previous_parse_result.json.len();
-            for i in 0..previous_len {
-                let (k, v) = &previous_parse_result.json[i];
-                let mut should_parse = false;
-                let mut is_object = false;
-                let mut new_depth = k.depth;
-                match k.value_type {
-                    ValueType::Array(_) => {
-                        should_parse = true && k.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
-                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
-                    }
-                    ValueType::Object(parsed) => {
-                        should_parse = !parsed && k.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
-                        is_object = true;
-                        new_depth = k.depth + 1 - previous_parse_result.depth_after_start_at;
-                    }
-                    _ => {}
-                };
-                if should_parse {
-                    if let Some(ref v) = v {
-                        let mut lexer = Lexer::new(v.as_bytes());
-                        let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at, previous_max_json_depth);
-                        parse_options.prefix = Some(k.pointer.clone());
-                        let mut res = parser.parse(&parse_options, new_depth)?.to_owned();
-                        if previous_parse_result.max_json_depth < res.max_json_depth {
-                            previous_parse_result.max_json_depth = res.max_json_depth;
-                        }
-
-                        if res.json.len() > 0 {
-                            match &res.json[0].0.value_type {
-                                ValueType::Array(size) => {
-                                    previous_parse_result.json[i].0.value_type = ValueType::Array(*size);
-                                    res.json.swap_remove(0);
-                                }
-                                _ => {}
-                            }
-                        }
-
-                        if is_object {
-                            previous_parse_result.json[i].0.value_type = ValueType::Object(true);
-                        }
-                        previous_parse_result.json.extend(res.json);
-                    }
-                }
-            }
-            Ok(())
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn filter_non_null_column<'a>(previous_parse_result: &Vec<JsonArrayEntries<'a>>, prefix: &str, non_null_columns: &Vec<String>) -> Vec<JsonArrayEntries<'a>> {
-        let mut res: Vec<JsonArrayEntries> = Vec::with_capacity(previous_parse_result.len());
-        for row in previous_parse_result {
-            let mut should_add_row = true;
-            for pointer in non_null_columns {
-                let pointer_to_find = concat_string!(prefix, "/", row.index().to_string(), pointer);
-                if let Some((_, value)) = row.find_node_at(&pointer_to_find) {
-                    if value.is_none() {
-                        should_add_row = false;
-                        break;
-                    }
-                } else {
-                    should_add_row = false;
-                    break;
-                }
-            }
-
-            if should_add_row {
-                res.push(row.clone());
-            }
-        }
-        res
-    }
-
-    pub fn serialize(mut data: FlatJsonValue) -> Value {
+    pub fn serialize<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Value<'a> {
         serialize_to_json(data)
     }
+
 }
 
 
