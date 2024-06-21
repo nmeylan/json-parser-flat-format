@@ -124,7 +124,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 break;
             }
             if self.should_parse_array(&route, parse_option) {
-                if !self.state_seen_start_parse_at && parse_option.start_parse_at.is_some() {
+                if !parse_option.parse_array && !self.state_seen_start_parse_at && parse_option.start_parse_at.is_some() {
                     self.state_seen_start_parse_at = true;
                     self.depth_after_start_at = depth - 1;
                 }
