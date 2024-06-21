@@ -17,6 +17,7 @@ pub struct ParseOptions {
     pub keep_object_raw_data: bool,
     pub max_depth: u8,
     pub start_parse_at: Option<String>,
+    pub start_depth: u8,
     pub prefix: Option<String>,
 }
 
@@ -27,6 +28,7 @@ impl Default for ParseOptions {
             keep_object_raw_data: true,
             max_depth: 10,
             start_parse_at: None,
+            start_depth: 1,
             prefix: None,
         }
     }
@@ -40,6 +42,10 @@ impl ParseOptions {
 
     pub fn start_parse_at(mut self, pointer: String) -> Self {
         self.start_parse_at = Some(pointer);
+        self
+    }
+    pub fn start_depth(mut self, depth: u8) -> Self {
+        self.start_depth = depth;
         self
     }
     pub fn max_depth(mut self, max_depth: u8) -> Self {
@@ -271,7 +277,7 @@ impl JSONParser {
     pub fn parse<'json>(input: &'json str, options: ParseOptions) -> Result<ParseResultRef<'json>, String> {
         let mut lexer = Lexer::new(input.as_bytes());
         let mut parser = Parser::new(&mut lexer);
-        parser.parse(&options, 1)
+        parser.parse(&options, options.start_depth)
     }
 
     pub fn change_depth<'json>(previous_parse_result: &mut ParseResultRef<'json>, mut parse_options: ParseOptions) -> Result<(), String> {
