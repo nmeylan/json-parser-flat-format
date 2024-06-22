@@ -64,7 +64,6 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data
             cmp => cmp,
         }
     );
-    println!("Sort took {}ms", start.elapsed().as_millis());
 
     let mut current_parent = &mut root;
     let mut previous_parent_pointer: Vec<String> = Vec::with_capacity(10);
@@ -155,7 +154,7 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data
                         previous_parent_pointer.push(s.to_owned());
                     }
                 }
-                let b = &key.pointer.as_bytes()[1];
+                let b = &previous_parent_pointer[0].as_bytes()[0];
                 if *b >= 0x30 && *b <= 0x39 {
                     current_parent = &mut root_array;
                 } else {
@@ -288,8 +287,9 @@ impl<V: ToString + AsRef<str>> Value<V> {
 #[cfg(test)]
 #[cfg(feature = "indexmap")] // to ease testing we use indexmap to have deterministic output
 mod tests {
-    use crate::{FlatJsonValue, JSONParser, ParseOptions};
+    use crate::{FlatJsonValue, JSONParser, ParseOptions, PointerKey, ValueType};
     use crate::serializer::{serialize_to_json, serialize_to_json_with_option};
+    use crate::ValueType::Array;
 
     #[test]
     fn nested_object() {
@@ -554,6 +554,7 @@ mod tests {
         let res = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap();
         let mut json_depth_2 = res.json;
 
+        // Test partial serialization of nested object
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let mut vec = res.json;
         let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/0"))
@@ -561,12 +562,32 @@ mod tests {
         let value = serialize_to_json_with_option(&mut vec, 3);
         assert_eq!(value.to_json().replace(" ", ""), json_depth_2[1].value.unwrap().replace(" ", ""));
 
+        // Test partial serialization of nested object
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let mut vec = res.json;
         let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/1"))
             .map(|e| e.clone()).collect::<Vec<FlatJsonValue<&str>>>();
         let value = serialize_to_json_with_option(&mut vec, 3);
         assert_eq!(value.to_json().replace(" ", ""), json_depth_2[2].value.unwrap().replace(" ", ""));
+
+
+
+        let res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
+        let mut json_depth_2 = res.json;
+
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 4 && entry.pointer.pointer.starts_with("/skills/1/bonusToSelf"))
+            .map(|e| e.clone()).collect::<Vec<FlatJsonValue<&str>>>();
+        vec.push(FlatJsonValue{ pointer: PointerKey{
+            pointer: "".to_string(),
+            value_type: ValueType::Array(10),
+            depth: 0,
+            index: 0,
+            position: 0,
+        }, value: None });
+        let value = serialize_to_json_with_option(&mut vec, 4);
+        assert_eq!(value.to_json().replace(" ", ""), json_depth_2[14].value.unwrap().replace(" ", ""));
     }
 
     #[test]
