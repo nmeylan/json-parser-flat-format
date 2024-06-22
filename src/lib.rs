@@ -251,7 +251,7 @@ pub enum ValueType {
 type PointerFragment = Vec<String>;
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FlatJsonValue<V: Debug + Clone + AsRef<str> + GetBytes> {
     pub pointer: PointerKey,
     pub value: Option<V>,

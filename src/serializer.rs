@@ -169,9 +169,12 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data
                     }
                     match current_parent {
                         Value::Object(ref mut obj) => {
-                            current_parent = obj.get_mut(s)
-                                // .unwrap();
-                            .expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
+                            if obj.contains_key(s) {
+                                current_parent = obj.get_mut(s).unwrap();
+                            } else {
+                                obj.insert(s.to_owned(), Value::Object(new_map()));
+                                current_parent = obj.get_mut(s).unwrap();
+                            }
                         }
                         Value::Array(ref mut array) => {
                             current_parent = array.get_mut(usize::from_str(s).unwrap())
@@ -312,6 +315,52 @@ mod tests {
         let mut vec = JSONParser::parse(json, ParseOptions::default()).unwrap().json;
         let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
+    }
+    #[test]
+    fn missing_parent() {
+        let json =
+            r#"{
+  "id": 1,
+  "maxLevel": 99,
+  "name": "NV_BASIC",
+  "aaa": true,
+  "bbb": null
+}"#;
+        let expectation =
+            r#"{
+  "id": 1,
+  "maxLevel": 99,
+  "name": "NV_BASIC",
+  "aaa": true,
+  "bbb": null,
+  "damageFlags": {
+    "fire": true
+  }
+}"#;
+
+        let mut vec = JSONParser::parse(json, ParseOptions::default()).unwrap().json;
+        vec.push(FlatJsonValue{
+            pointer: PointerKey {
+                pointer: "/damageFlags/fire".to_string(),
+                value_type: ValueType::Bool,
+                depth: 2,
+                index: 0,
+                position: 0,
+            },
+            value: Some("true"),
+        });
+        // vec.push(FlatJsonValue{
+        //     pointer: PointerKey {
+        //         pointer: "/requires/spPerLevel/0/level".to_string(),
+        //         value_type: ValueType::Number,
+        //         depth: 4,
+        //         index: 0,
+        //         position: 0,
+        //     },
+        //     value: Some("11"),
+        // });
+        let value = serialize_to_json(&mut vec);
+        assert_eq!(value.to_json(), expectation);
     }
 
     #[test]
@@ -590,7 +639,7 @@ mod tests {
 
         let res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
         let mut json_depth_2 = res.json;
-        
+
         // Test partial serialization of nested parsed array
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let mut vec = res.json;
