@@ -11,13 +11,13 @@ type Map<K, V> = indexmap::IndexMap<K, V>;
 type Map<K, V> = std::collections::HashMap<K, V>;
 
 #[derive(Debug)]
-pub enum Value<'a> {
-    Object(Map<String, Value<'a>>),
-    ObjectSerialized(&'a str),
-    Array(Vec<Value<'a>>),
-    ArraySerialized(&'a str),
+pub enum Value<V> {
+    Object(Map<String, Value<V>>),
+    ObjectSerialized(V),
+    Array(Vec<Value<V>>),
+    ArraySerialized(V),
     Number(f64),
-    String(&'a str),
+    String(V),
     Bool(bool),
     Null,
 }
@@ -43,8 +43,8 @@ macro_rules! vec_matches {
 
 
 
-pub fn serialize_to_json<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Value<'a> {
-    let mut root = Value::Object(new_map());
+pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data: &mut Vec<FlatJsonValue<V>>) -> Value<V> {
+    let mut root = Value::Object(new_map::<V>());
     let mut root_array = Value::Array(Vec::with_capacity(128));
 
     let mut root_is_obj = true;
@@ -80,7 +80,7 @@ pub fn serialize_to_json<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Valu
                         ValueType::Object(_) => { obj.insert(key.pointer[1..].to_owned(), Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                obj.insert(key.pointer[1..].to_owned(), Value::ArraySerialized(value.as_ref()));
+                                obj.insert(key.pointer[1..].to_owned(), Value::ArraySerialized(value));
                             } else {
                                 obj.insert(key.pointer[1..].to_owned(), Value::Array(Vec::with_capacity(len)));
                             }
@@ -93,7 +93,7 @@ pub fn serialize_to_json<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Valu
                         ValueType::Object(_) => { array.push(Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                array.push(Value::ArraySerialized(value.as_ref()));
+                                array.push(Value::ArraySerialized(value));
                             } else {
                                 array.push(Value::Array(Vec::with_capacity(len)));
                             }
@@ -170,7 +170,7 @@ pub fn serialize_to_json<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Valu
                         ValueType::Object(_) => { obj.insert(k.to_owned(), Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                obj.insert(k.to_owned(), Value::ArraySerialized(value.as_ref()));
+                                obj.insert(k.to_owned(), Value::ArraySerialized(value));
                             } else {
                                 obj.insert(k.to_owned(), Value::Array(Vec::with_capacity(len)));
                             }
@@ -183,7 +183,7 @@ pub fn serialize_to_json<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Valu
                         ValueType::Object(_) => { array.push(Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                array.push(Value::ArraySerialized(value.as_ref()));
+                                array.push(Value::ArraySerialized(value));
                             } else {
                                 array.push(Value::Array(Vec::with_capacity(len)));
                             }
@@ -204,7 +204,7 @@ pub fn serialize_to_json<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Valu
 }
 
 #[inline]
-fn new_map<'a>() -> Map<String, Value<'a>> {
+fn new_map<V>() -> Map<String, Value<V>> {
     #[cfg(feature = "indexmap")]{
         indexmap::IndexMap::new()
     }
@@ -214,12 +214,12 @@ fn new_map<'a>() -> Map<String, Value<'a>> {
 }
 
 // Helper function to convert string values to JSON values based on ValueType
-fn value_to_json<'a>(value: Option<&'a str>, value_type: &ValueType) -> Value<'a> {
+fn value_to_json<V: Debug + Clone + AsRef<str> + GetBytes>(value: Option<V>, value_type: &ValueType) -> Value<V> {
     if let Some(value) = value {
         match value_type {
-            ValueType::Number => value.parse::<f64>().map(Value::Number).unwrap_or(Value::Null),
+            ValueType::Number => value.as_ref().parse::<f64>().map(Value::Number).unwrap_or(Value::Null),
             ValueType::String => Value::String(value),
-            ValueType::Bool => Value::Bool(value  == "true" || value == "1"),
+            ValueType::Bool => Value::Bool(value.as_ref()  == "true" || value.as_ref() == "1"),
             ValueType::Null => Value::Null,
             _ => Value::Null, // this should not happen as arrays and objects are handled separately
         }
@@ -228,7 +228,7 @@ fn value_to_json<'a>(value: Option<&'a str>, value_type: &ValueType) -> Value<'a
     }
 }
 
-impl<'a> Value<'a> {
+impl<V: ToString + AsRef<str>> Value<V> {
     pub fn to_json(&self) -> String {
         self._to_json(1)
     }
@@ -255,7 +255,7 @@ impl<'a> Value<'a> {
                 }
             }
             Value::Number(num) => num.to_string(),
-            Value::String(s) => format!("\"{}\"", s.replace("\"", "\\\"")),
+            Value::String(s) => format!("\"{}\"", s.as_ref().replace("\"", "\\\"")),
             Value::Bool(b) => b.to_string(),
             Value::Null => "null".to_string(),
             Value::ArraySerialized(value) => value.to_string(),

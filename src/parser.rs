@@ -6,7 +6,7 @@ use crate::lexer::{Lexer, Token};
 pub struct Parser<'a, 'json> {
     lexer: &'a mut Lexer<'json>,
     current_token: Option<Token<'json>>,
-    state_seen_start_parse_at: bool,
+    pub state_seen_start_parse_at: bool,
     pub max_depth: usize,
     pub depth_after_start_at: u8,
 }
