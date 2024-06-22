@@ -460,6 +460,22 @@ mod tests {
       "maxLevel": 10,
       "name": "SM_SWORD",
       "type": "Weapon",
+      "requires": {
+        "spCostPerLevel": [
+          {
+            "level": 1,
+            "value": 10
+          },
+          {
+            "level": 2,
+            "value": 20
+          },
+          {
+            "level": 3,
+            "value": 30
+          }
+        ]
+      },
       "bonusToSelf": [
         {
           "level": 1,
@@ -574,7 +590,8 @@ mod tests {
 
         let res = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
         let mut json_depth_2 = res.json;
-
+        
+        // Test partial serialization of nested parsed array
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let mut vec = res.json;
         let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 4 && entry.pointer.pointer.starts_with("/skills/1/bonusToSelf"))
@@ -587,7 +604,22 @@ mod tests {
             position: 0,
         }, value: None });
         let value = serialize_to_json_with_option(&mut vec, 4);
-        assert_eq!(value.to_json().replace(" ", ""), json_depth_2[14].value.unwrap().replace(" ", ""));
+        assert_eq!(value.to_json().replace(" ", ""), json_depth_2[16].value.unwrap().replace(" ", ""));
+
+        // Test partial serialization of nested parsed array under object
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 5 && entry.pointer.pointer.starts_with("/skills/1/requires/spCostPerLevel"))
+            .map(|e| e.clone()).collect::<Vec<FlatJsonValue<&str>>>();
+        vec.push(FlatJsonValue{ pointer: PointerKey{
+            pointer: "".to_string(),
+            value_type: ValueType::Array(10),
+            depth: 0,
+            index: 0,
+            position: 0,
+        }, value: None });
+        let value = serialize_to_json_with_option(&mut vec, 5);
+        assert_eq!(value.to_json().replace(" ", ""), json_depth_2[15].value.unwrap().replace(" ", ""));
     }
 
     #[test]
