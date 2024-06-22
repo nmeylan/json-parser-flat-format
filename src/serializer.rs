@@ -41,9 +41,15 @@ macro_rules! vec_matches {
     }
 }
 
-
-
 pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data: &mut Vec<FlatJsonValue<V>>) -> Value<V> {
+    _serialize_to_json(data, 1)
+}
+
+pub fn serialize_to_json_with_option<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data: &mut Vec<FlatJsonValue<V>>, root_depth: u8) -> Value<V> {
+    _serialize_to_json(data, root_depth)
+}
+
+pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data: &mut Vec<FlatJsonValue<V>>, root_depth: u8) -> Value<V> {
     let mut root = Value::Object(new_map::<V>());
     let mut root_array = Value::Array(Vec::with_capacity(128));
 
@@ -73,19 +79,24 @@ pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data:
             continue;
         }
 
-        if key.depth == 1 {
+        if key.depth == root_depth {
             match current_parent {
                 Value::Object(obj) => {
+                    let pointer = if root_depth == 1 {
+                        key.pointer[1..].to_owned()
+                    } else {
+                        key.pointer.splitn(root_depth as usize + 1, '/').last().unwrap().to_owned()
+                    };
                     match key.value_type {
-                        ValueType::Object(_) => { obj.insert(key.pointer[1..].to_owned(), Value::Object(new_map())); }
+                        ValueType::Object(_) => { obj.insert(pointer.to_owned(), Value::Object(new_map())); }
                         ValueType::Array(len) => {
                             if let Some(value) = value {
-                                obj.insert(key.pointer[1..].to_owned(), Value::ArraySerialized(value));
+                                obj.insert(pointer.to_owned(), Value::ArraySerialized(value));
                             } else {
-                                obj.insert(key.pointer[1..].to_owned(), Value::Array(Vec::with_capacity(len)));
+                                obj.insert(pointer.to_owned(), Value::Array(Vec::with_capacity(len)));
                             }
                         }
-                        _ => { obj.insert(key.pointer[1..].to_owned(), value_to_json(value, &key.value_type)); }
+                        _ => { obj.insert(pointer.to_owned(), value_to_json(value, &key.value_type)); }
                     }
                 }
                 Value::Array(array) => {
@@ -103,9 +114,10 @@ pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data:
                 }
                 _ => panic!("only Object is accepted for root node")
             }
-        } else {
+        } else if key.depth > root_depth {
             let split = key.pointer.split('/');
             let key_pointer_iter = split.filter(|s| !s.is_empty());
+            let start: usize = root_depth as usize - 1;
             let key_pointer_len = key_pointer_iter.clone().count();
 
             let mut should_update_current_parent = true;
@@ -115,6 +127,9 @@ pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data:
                 } else {
                     let mut matches = true;
                     for (i, s) in key_pointer_iter.clone().enumerate() {
+                        if i < start {
+                            continue
+                        }
                         if i == key_pointer_len - 1 {
                             break;
                         }
@@ -131,6 +146,9 @@ pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data:
                 previous_parent_pointer.clear();
                 if key_pointer_len > 0 {
                     for (i, s) in key_pointer_iter.clone().enumerate() {
+                        if i < start {
+                            continue
+                        }
                         if i == key_pointer_len - 1 {
                             break;
                         }
@@ -144,14 +162,17 @@ pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(mut data:
                     current_parent = &mut root;
                 }
                 for (i, s) in key_pointer_iter.clone().enumerate() {
+                    if i < start {
+                        continue
+                    }
                     if i == key_pointer_len - 1 {
                         break;
                     }
                     match current_parent {
                         Value::Object(ref mut obj) => {
                             current_parent = obj.get_mut(s)
-                                .unwrap();
-                            // .expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
+                                // .unwrap();
+                            .expect(format!("Expected to find parent for {}, current segment {}", key.pointer, s).as_str());
                         }
                         Value::Array(ref mut array) => {
                             current_parent = array.get_mut(usize::from_str(s).unwrap())
@@ -267,8 +288,8 @@ impl<V: ToString + AsRef<str>> Value<V> {
 #[cfg(test)]
 #[cfg(feature = "indexmap")] // to ease testing we use indexmap to have deterministic output
 mod tests {
-    use crate::{JSONParser, ParseOptions};
-    use crate::serializer::serialize_to_json;
+    use crate::{FlatJsonValue, JSONParser, ParseOptions};
+    use crate::serializer::{serialize_to_json, serialize_to_json_with_option};
 
     #[test]
     fn nested_object() {
@@ -529,6 +550,23 @@ mod tests {
         let mut vec = res.json;
         let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
+
+        let res = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap();
+        let mut json_depth_2 = res.json;
+
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/0"))
+            .map(|e| e.clone()).collect::<Vec<FlatJsonValue<&str>>>();
+        let value = serialize_to_json_with_option(&mut vec, 3);
+        assert_eq!(value.to_json().replace(" ", ""), json_depth_2[1].value.unwrap().replace(" ", ""));
+
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let mut vec = res.json;
+        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/1"))
+            .map(|e| e.clone()).collect::<Vec<FlatJsonValue<&str>>>();
+        let value = serialize_to_json_with_option(&mut vec, 3);
+        assert_eq!(value.to_json().replace(" ", ""), json_depth_2[2].value.unwrap().replace(" ", ""));
     }
 
     #[test]

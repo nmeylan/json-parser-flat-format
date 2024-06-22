@@ -8,7 +8,7 @@ use crate::serializer::{serialize_to_json, Value};
 
 pub mod parser;
 pub mod lexer;
-mod serializer;
+pub mod serializer;
 
 pub struct JSONParser {}
 
