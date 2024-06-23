@@ -168,12 +168,12 @@ macro_rules! change_depth {
                 match entry.pointer.value_type {
                     ValueType::Array(_) => {
                         should_parse = true && entry.pointer.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
-                        new_depth = entry.pointer.depth + 1 - previous_parse_result.depth_after_start_at;
+                        new_depth = entry.pointer.depth + 1;
                     }
                     ValueType::Object(parsed) => {
                         should_parse = !parsed && entry.pointer.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
                         is_object = true;
-                        new_depth = entry.pointer.depth + 1 - previous_parse_result.depth_after_start_at;
+                        new_depth = entry.pointer.depth + 1;
                     }
                     _ => {}
                 };
