@@ -166,12 +166,13 @@ macro_rules! change_depth {
                 let mut new_depth = entry.pointer.depth;
                 match entry.pointer.value_type {
                     ValueType::Array(_) => {
-                        should_parse = entry.pointer.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
+                        should_parse = parse_options.parse_array && entry.pointer.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
+                        // println!("{}({:?}) - should parse: {} ({} - {} <= {})", entry.pointer.pointer, entry.pointer.value_type, should_parse, entry.pointer.depth, previous_parse_result.depth_after_start_at, previous_parse_depth);
                         new_depth = entry.pointer.depth + 1;
                     }
                     ValueType::Object(parsed) => {
                         should_parse = !parsed && entry.pointer.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
-                        // println!("{} - should parse: {} (!{} && {} - {} <= {})", entry.pointer.pointer, should_parse, parsed, entry.pointer.depth, previous_parse_result.depth_after_start_at, previous_parse_depth);
+                        // println!("{}({:?}) - should parse: {} (!{} && {} - {} <= {})", entry.pointer.pointer, entry.pointer.value_type, should_parse, parsed, entry.pointer.depth, previous_parse_result.depth_after_start_at, previous_parse_depth);
                         is_object = true;
                         new_depth = entry.pointer.depth + 1;
                     }
@@ -189,6 +190,7 @@ macro_rules! change_depth {
                             previous_parse_result.max_json_depth = res.max_json_depth;
                         }
 
+                        // println!("{:?}", res.json);
                         if res.json.len() > 0 {
                             match &res.json[0].pointer.value_type {
                                 ValueType::Array(size) => {
