@@ -89,7 +89,6 @@ impl<'json> SliceRead<'json> {
 
 pub struct Lexer<'json> {
     reader: SliceRead<'json>,
-    current_token: Option<Token<'json>>,
 }
 
 
@@ -103,7 +102,6 @@ impl<'json> Lexer<'json> {
     pub fn new(input: &'json [u8]) -> Self {
         Lexer {
             reader: SliceRead::new(input),
-            current_token: None,
         }
     }
 
@@ -133,7 +131,7 @@ impl<'json> Lexer<'json> {
                 b'[' => square_close_count += 1,
                 b']' => {
                     if square_close_count == 1 {
-                        return Some(string_from_bytes(&self.reader.slice[array_start_index..self.reader.index])?);
+                        return string_from_bytes(&self.reader.slice[array_start_index..self.reader.index]);
                     } else {
                         square_close_count -= 1;
                     }
@@ -208,7 +206,7 @@ impl<'json> Lexer<'json> {
                 b'-' | b'0' | b'1' | b'2' | b'3' | b'4' | b'5' | b'6' | b'7' | b'8' | b'9' => {
                     let start = self.reader.index - 1;
                     while let Some(b) = self.reader.next() {
-                        if !((b >= 0x30 && b <= 0x39) || b == b'.') {
+                        if !((0x30..=0x39).contains(&b) || b == b'.') {
                             break;
                         }
                     }
@@ -242,7 +240,6 @@ impl<'json> Lexer<'json> {
                 _ => {}
             }
         }
-        None
     }
 }
 

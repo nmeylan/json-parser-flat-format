@@ -1,7 +1,6 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug};
 use std::hash::{Hash, Hasher};
-use std::os::unix::ffi::OsStrExt;
-use std::time::Instant;
+
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::serializer::{serialize_to_json, Value};
@@ -132,12 +131,12 @@ impl Hash for PointerKey {
 impl PointerKey {
     pub fn parent(&self) -> &str {
         let index = self.pointer.rfind('/').unwrap_or(0);
-        let parent_pointer = if index == 0 {
+        
+        (if index == 0 {
             "/"
         } else {
             &self.pointer[0..index]
-        };
-        parent_pointer
+        }) as _
     }
 }
 #[macro_export]
@@ -182,7 +181,7 @@ macro_rules! change_depth {
                         let mut lexer = Lexer::new(v.as_bytes());
                         let mut parser = Parser::new_for_change_depth(&mut lexer, previous_parse_result.depth_after_start_at, previous_max_json_depth);
                         parse_options.prefix = Some(entry.pointer.pointer.clone());
-                        let mut res = parser.parse(&parse_options, new_depth).unwrap();
+                        let res = parser.parse(&parse_options, new_depth).unwrap();
                         let mut res = $to_owned(res);
                         if previous_parse_result.max_json_depth < res.max_json_depth {
                             previous_parse_result.max_json_depth = res.max_json_depth;
@@ -280,7 +279,7 @@ impl ParseResult<String> {
         }
     }
 
-    pub fn to_owned(mut self) -> ParseResult<String> {
+    pub fn to_owned(self) -> ParseResult<String> {
         self
     }
 
@@ -296,7 +295,7 @@ impl ParseResult<&str> {
             depth_after_start_at: self.depth_after_start_at,
         }
     }
-    pub fn to_owned(mut self) -> ParseResult<String> {
+    pub fn to_owned(self) -> ParseResult<String> {
         let mut transformed_vec: Vec<FlatJsonValue<String>> = Vec::with_capacity(self.json.len());
 
         for entry in self.json {
@@ -316,7 +315,7 @@ impl ParseResult<&str> {
 
 
 impl JSONParser {
-    pub fn parse<'json>(input: &'json str, options: ParseOptions) -> Result<ParseResult<&'json str>, String> {
+    pub fn parse(input: &str, options: ParseOptions) -> Result<ParseResult<&str>, String> {
         let mut lexer = Lexer::new(input.as_bytes());
         let mut parser = Parser::new(&mut lexer);
         parser.parse(&options, options.start_depth)
@@ -327,11 +326,11 @@ impl JSONParser {
     change_depth!(String, change_depth_owned, |r: ParseResult<&str>| r.to_owned());
 
 
-    pub fn serialize<'a>(mut data: &mut Vec<FlatJsonValue<&'a str>>) -> Value<&'a str> {
+    pub fn serialize<'a>(data: &mut Vec<FlatJsonValue<&'a str>>) -> Value<&'a str> {
         serialize_to_json(data)
     }
 
-    pub fn serialize_owned(mut data: &mut Vec<FlatJsonValue<String>>) -> Value<String> {
+    pub fn serialize_owned(data: &mut Vec<FlatJsonValue<String>>) -> Value<String> {
         serialize_to_json(data)
     }
 

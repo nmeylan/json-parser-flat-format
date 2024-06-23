@@ -1,9 +1,3 @@
-use std::cell::RefCell;
-
-type PointerFragment = Vec<&'static str>;
-
-
-
 fn main() {
     swar();
 }

@@ -1,6 +1,5 @@
-use std::{fs, result};
+use std::{fs};
 use std::path::Path;
-use std::process::exit;
 use std::time::Instant;
 use json_flat_parser::{JSONParser, ParseOptions};
 // Parse
@@ -32,7 +31,7 @@ fn main() {
     let options = ParseOptions::default().parse_array(true).keep_object_raw_data(true).start_parse_at("/skills".to_string()).max_depth(1);
     let mut result = JSONParser::parse(content.as_mut_str(), options.clone()).unwrap();
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, result.parsing_max_depth, result.json.len());
-    exit(1);
+
     let start = Instant::now();
     JSONParser::change_depth(&mut result, options.clone().max_depth(2)).unwrap();
     println!("Change depth to {} took {} ms, new json len {}", result.parsing_max_depth, start.elapsed().as_millis(), result.json.len());

@@ -1,6 +1,6 @@
-use std::fmt::Debug;
+
 use std::mem;
-use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResult, PointerFragment, PointerKey, string_from_bytes, ValueType};
+use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResult, PointerFragment, PointerKey, ValueType};
 use crate::lexer::{Lexer, Token};
 
 pub struct Parser<'a, 'json> {
@@ -44,11 +44,10 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 let mut pointer_fragment: Vec<String> = Vec::with_capacity(128);
                 if let Some(ref p) = parse_option.prefix { pointer_fragment.push(p.clone()) }
                 let i = 0;
-                let mut pointer_index = -1 as isize;
-                pointer_index = values.len() as isize;
+                let pointer_index = values.len() as isize;
 
                 values.push(FlatJsonValue { pointer: PointerKey::from_pointer("".to_string(), ValueType::Array(0), depth, i), value: None });
-                self.process_array(&mut pointer_fragment, &mut values, depth, i + 1, parse_option, &mut position, pointer_index);
+                self.process_array(&mut pointer_fragment, &mut values, depth, i + 1, parse_option, &mut position, pointer_index)?;
                 return Ok(ParseResult {
                     json: values,
                     max_json_depth: self.max_depth,
@@ -73,6 +72,10 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
             match token {
                 Token::String(key) => {
                     route.push(concat_string!("/", key));
+                }
+                Token::CurlyClose => {
+                    // empty object
+                    break;
                 }
                 _ => return Err(format!("Expected object to have a key at this location: {}, previous valid parsed value: {:?}", Self::concat_route(route),
                                         target.last().map(|e| e.pointer.pointer.as_str()).unwrap_or("")))
@@ -104,7 +107,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 Some(ref token) if matches!(token, Token::SquareClose) => {
                     // route.pop();
                     panic!("End of array should not be consumed from there, json probably wrong");
-                    break;
+                    // break;
                 }
                 None => break,
                 _ => return Err(format!("Expected ',' or '}}' or ']' after object value, got: {:?}", self.current_token)),
@@ -122,7 +125,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
             if matches!(token, Token::SquareClose) {
                 if pointer_index >= 0 {
                     let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].pointer);
-                    target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position as usize), value: None };
+                    target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position), value: None };
                 }
                 break;
             }
@@ -137,7 +140,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 }
                 if depth - self.depth_after_start_at <= parse_option.max_depth {
                     route.push("/0".to_string());
-                    self.parse_value(route, target, depth, count, parse_option, position);
+                    self.parse_value(route, target, depth, count, parse_option, position)?;
                     route.pop();
                     self.next_token();
                     while let Some(ref token) = self.current_token {
@@ -147,7 +150,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         self.next_token();
                         if let Some(ref _token) = self.current_token {
                             route.push(format!("/{}", i));
-                            self.parse_value(route, target, depth, count, parse_option, position);
+                            self.parse_value(route, target, depth, count, parse_option, position)?;
                             route.pop();
                         } else {
                             break;
@@ -155,23 +158,19 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         self.next_token();
                         i += 1;
                     }
-                } else {
-                    if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
-                        if pointer_index >= 0 {
-                            let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].pointer);
-                            target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position as usize), value: Some(array_str) };
-                        }
-                        break;
-                    }
-                }
-            } else {
-                if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
+                } else if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
                     if pointer_index >= 0 {
-                        let PointerKey { position, depth, .. } = target[pointer_index as usize].pointer;
-                        target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(i), depth, position as usize), value: Some(array_str) };
+                        let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].pointer);
+                        target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position), value: Some(array_str) };
                     }
                     break;
                 }
+            } else if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
+                if pointer_index >= 0 {
+                    let PointerKey { position, depth, .. } = target[pointer_index as usize].pointer;
+                    target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(i), depth, position), value: Some(array_str) };
+                }
+                break;
             }
         }
         Ok(())
@@ -181,17 +180,17 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
         match self.current_token {
             Some(ref token) => match token {
                 Token::CurlyOpen => {
-                    if depth - self.depth_after_start_at <= parse_option.max_depth as u8 {
+                    if depth - self.depth_after_start_at <= parse_option.max_depth {
                         let start = self.lexer.reader_index();
                         if let Some(object_str) = self.lexer.consume_string_until_end_of_object(true) {
                             *position += 1;
-                            if parse_option.keep_object_raw_data || depth - self.depth_after_start_at == parse_option.max_depth as u8 {
+                            if parse_option.keep_object_raw_data || depth - self.depth_after_start_at == parse_option.max_depth {
                                 target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(depth - self.depth_after_start_at < parse_option.max_depth), depth, *position), value: Some(object_str) });
                             } else {
                                 target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(true), depth, *position), value: None });
                             }
                             self.lexer.set_reader_index(start);
-                            self.process_object(route, target, depth + 1, count, parse_option, position);
+                            self.process_object(route, target, depth + 1, count, parse_option, position)?;
                         } else {
                             panic!("We should no go there! we have not found matching closing curly {}", String::from_utf8_lossy(&self.lexer.reader().data()[start..start + 1000]))
                         }
@@ -204,16 +203,16 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 }
                 Token::SquareOpen => {
                     let mut pointer_index: isize = -1;
-                    if depth - self.depth_after_start_at <= parse_option.max_depth as u8 {
+                    if depth - self.depth_after_start_at <= parse_option.max_depth {
                         *position += 1;
                         pointer_index = target.len() as isize;
                         target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(0), depth, *position), value: None });
                     }
-                    self.process_array(route, target, depth + 1, count, parse_option, position, pointer_index);
+                    self.process_array(route, target, depth + 1, count, parse_option, position, pointer_index)?;
                     Ok(())
                 }
                 Token::String(value) => {
-                    if depth - self.depth_after_start_at <= parse_option.max_depth as u8 {
+                    if depth - self.depth_after_start_at <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
@@ -229,7 +228,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     Ok(())
                 }
                 Token::Number(value) => {
-                    if depth - self.depth_after_start_at <= parse_option.max_depth as u8 {
+                    if depth - self.depth_after_start_at <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
@@ -244,7 +243,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     Ok(())
                 }
                 Token::Boolean(value) => {
-                    if depth - self.depth_after_start_at <= parse_option.max_depth as u8 {
+                    if depth - self.depth_after_start_at <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
@@ -259,7 +258,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     Ok(())
                 }
                 Token::Null => {
-                    if depth <= parse_option.max_depth as u8 {
+                    if depth <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
@@ -302,7 +301,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
+    
     use crate::{JSONParser, ParseOptions, ValueType};
 
     #[test]
@@ -315,7 +314,7 @@ mod tests {
               "aaa": true
             }"#;
 
-        let mut res = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let vec = res.json;
         assert_eq!(vec[0].pointer.pointer, "/id");
         assert_eq!(vec[0].pointer.value_type, ValueType::Number);
@@ -374,12 +373,12 @@ mod tests {
         "plagiarism": true,"reproduce": true}, "bonusToSelf": [{"level":1,"value":2}]}, {"description": "Bash", "copyflags": {"plagiarism": true,"reproduce": true}}]"#;
 
         let result1 = JSONParser::parse(json, ParseOptions::default().parse_array(false).start_parse_at("/skills".to_string()).max_depth(1)).unwrap();
-        let vec = &result1.json;
+        let _vec = &result1.json;
     }
 
     #[test]
     fn parse_empty_object() {
-        let json = r#"{"a": {"c": [ ], "b": { }}}"#;
+        let json = r#"{"a": {"c": [ ], "b": { }, "d": 1}, "e": 2}"#;
         let result1 = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let vec = &result1.json;
 
@@ -389,6 +388,10 @@ mod tests {
         assert_eq!(vec[1].pointer.value_type, ValueType::Array(1));
         assert_eq!(vec[2].pointer.pointer, "/a/b");
         assert_eq!(vec[2].pointer.value_type, ValueType::Object(true));
+        assert_eq!(vec[3].pointer.pointer, "/a/d");
+        assert_eq!(vec[3].pointer.value_type, ValueType::Number);
+        assert_eq!(vec[4].pointer.pointer, "/e");
+        assert_eq!(vec[4].pointer.value_type, ValueType::Number);
     }
     #[test]
     fn parse_array_of_array() {
@@ -413,7 +416,7 @@ mod tests {
               "flags": {"a": true, "b": false, "c": {"nested": "Oui"}}
             }"#;
 
-        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.replace(['\n', ' '], "");
         let json = json.as_str();
 
         let vec = JSONParser::parse(json, ParseOptions::default()).unwrap().json;
@@ -544,7 +547,7 @@ mod tests {
             }
         "#;
 
-        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.replace(['\n', ' '], "");
         let json = json.as_str();
 
         let vec = JSONParser::parse(json, ParseOptions::default()).unwrap().json;
@@ -580,7 +583,7 @@ mod tests {
             }
         "#;
 
-        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.replace(['\n', ' '], "");
         let json = json.as_str();
 
         let vec = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap().json;
@@ -619,7 +622,7 @@ mod tests {
         let vec = JSONParser::parse(json, ParseOptions::default().parse_array(false)).unwrap().json;
         assert_eq!(vec[0].pointer.pointer, "/skills");
         assert_eq!(vec[0].pointer.value_type, ValueType::Array(1));
-        assert_eq!(vec[0].value.unwrap().replace('\n', "").replace(' ', ""), "[{\"description\": \"Basic Skill\"},\n                    {\"description\": \"Heal\"},\n                    {\"description\": \"Bash\"}\n                ]".replace('\n', "").replace(' ', ""));
+        assert_eq!(vec[0].value.unwrap().replace(['\n', ' '], ""), "[{\"description\": \"Basic Skill\"},\n                    {\"description\": \"Heal\"},\n                    {\"description\": \"Bash\"}\n                ]".replace(['\n', ' '], ""));
     }
 
     #[test]
@@ -694,7 +697,7 @@ mod tests {
     }
   ]
 }"#;
-        let json = json.replace('\n', "").replace(' ', "");
+        let json = json.replace(['\n', ' '], "");
         let json = json.as_str();
 
         let result_ref = JSONParser::parse(json, ParseOptions::default().max_depth(1)).unwrap();
@@ -716,10 +719,10 @@ mod tests {
         assert_eq!(vec[1].pointer.value_type, ValueType::Array(2));
         assert_eq!(vec[2].pointer.pointer, "/skills/1"); // there is a swap remove
         assert_eq!(vec[2].pointer.value_type, ValueType::Object(false));
-        assert_eq!(vec[3].value.is_some(), true);
+        assert!(vec[3].value.is_some());
         assert_eq!(vec[3].pointer.pointer, "/skills/0");
         assert_eq!(vec[3].pointer.value_type, ValueType::Object(false));
-        assert_eq!(vec[3].value.is_some(), true);
+        assert!(vec[3].value.is_some());
 
 
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap().json;
@@ -730,10 +733,10 @@ mod tests {
         assert_eq!(vec[1].pointer.value_type, ValueType::Array(2));
         assert_eq!(vec[2].pointer.pointer, "/skills/0");
         assert_eq!(vec[2].pointer.value_type, ValueType::Object(false));
-        assert_eq!(vec[3].value.is_some(), true);
+        assert!(vec[3].value.is_some());
         assert_eq!(vec[3].pointer.pointer, "/skills/1");
         assert_eq!(vec[3].pointer.value_type, ValueType::Object(false));
-        assert_eq!(vec[3].value.is_some(), true);
+        assert!(vec[3].value.is_some());
 
         //
         let mut res = JSONParser::parse(json, ParseOptions::default().max_depth(2)).unwrap();
@@ -746,7 +749,7 @@ mod tests {
         assert_eq!(vec[1].pointer.value_type, ValueType::Array(2));
         assert_eq!(vec[2].pointer.pointer, "/skills/0");
         assert_eq!(vec[2].pointer.value_type, ValueType::Object(true));
-        assert_eq!(vec[2].value.is_some(), true);
+        assert!(vec[2].value.is_some());
         assert_eq!(vec[4].pointer.pointer, "/skills/0/description");
         assert_eq!(vec[4].pointer.value_type, ValueType::String);
         assert_eq!(vec[5].pointer.pointer, "/skills/0/id");
@@ -755,7 +758,7 @@ mod tests {
         assert_eq!(vec[6].pointer.value_type, ValueType::String);
         assert_eq!(vec[3].pointer.pointer, "/skills/1");
         assert_eq!(vec[3].pointer.value_type, ValueType::Object(true));
-        assert_eq!(vec[3].value.is_some(), true);
+        assert!(vec[3].value.is_some());
         assert_eq!(vec[7].pointer.pointer, "/skills/1/description");
         assert_eq!(vec[7].pointer.value_type, ValueType::String);
         assert_eq!(vec[8].pointer.pointer, "/skills/1/id");
@@ -778,7 +781,7 @@ mod tests {
         assert_eq!(vec[1].pointer.value_type, ValueType::Array(2));
         assert_eq!(vec[2].pointer.pointer, "/skills/0");
         assert_eq!(vec[2].pointer.value_type, ValueType::Object(true));
-        assert_eq!(vec[2].value.is_some(), true);
+        assert!(vec[2].value.is_some());
         assert_eq!(vec[3].pointer.pointer, "/skills/0/description");
         assert_eq!(vec[3].pointer.value_type, ValueType::String);
         assert_eq!(vec[4].pointer.pointer, "/skills/0/id");
@@ -787,7 +790,7 @@ mod tests {
         assert_eq!(vec[5].pointer.value_type, ValueType::String);
         assert_eq!(vec[6].pointer.pointer, "/skills/1");
         assert_eq!(vec[6].pointer.value_type, ValueType::Object(true));
-        assert_eq!(vec[6].value.is_some(), true);
+        assert!(vec[6].value.is_some());
         assert_eq!(vec[7].pointer.pointer, "/skills/1/description");
         assert_eq!(vec[7].pointer.value_type, ValueType::String);
         assert_eq!(vec[8].pointer.pointer, "/skills/1/id");
@@ -817,10 +820,10 @@ mod tests {
         assert_eq!(vec[1].pointer.value_type, ValueType::Array(2));
         assert_eq!(vec[2].pointer.pointer, "/skills/0");
         assert_eq!(vec[2].pointer.value_type, ValueType::Object(false));
-        assert_eq!(vec[3].value.is_some(), true);
+        assert!(vec[3].value.is_some());
         assert_eq!(vec[3].pointer.pointer, "/skills/1");
         assert_eq!(vec[3].pointer.value_type, ValueType::Object(false));
-        assert_eq!(vec[3].value.is_some(), true);
+        assert!(vec[3].value.is_some());
 
         let vec = JSONParser::parse(json, ParseOptions::default().max_depth(3).keep_object_raw_data(false)).unwrap().json;
         assert_eq!(vec.len(), 13);
@@ -830,7 +833,7 @@ mod tests {
         assert_eq!(vec[1].pointer.value_type, ValueType::Array(2));
         assert_eq!(vec[2].pointer.pointer, "/skills/0");
         assert_eq!(vec[2].pointer.value_type, ValueType::Object(true));
-        assert_eq!(vec[2].value.is_some(), false);
+        assert!(vec[2].value.is_none());
         assert_eq!(vec[3].pointer.pointer, "/skills/0/description");
         assert_eq!(vec[3].pointer.value_type, ValueType::String);
         assert_eq!(vec[4].pointer.pointer, "/skills/0/id");
@@ -839,7 +842,7 @@ mod tests {
         assert_eq!(vec[5].pointer.value_type, ValueType::String);
         assert_eq!(vec[6].pointer.pointer, "/skills/1");
         assert_eq!(vec[6].pointer.value_type, ValueType::Object(true));
-        assert_eq!(vec[6].value.is_some(), false);
+        assert!(vec[6].value.is_none());
         assert_eq!(vec[7].pointer.pointer, "/skills/1/description");
         assert_eq!(vec[7].pointer.value_type, ValueType::String);
         assert_eq!(vec[8].pointer.pointer, "/skills/1/id");
