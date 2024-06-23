@@ -89,6 +89,7 @@ impl<'json> SliceRead<'json> {
 
 pub struct Lexer<'json> {
     reader: SliceRead<'json>,
+    current_token: Option<Token<'json>>,
 }
 
 
@@ -102,12 +103,16 @@ impl<'json> Lexer<'json> {
     pub fn new(input: &'json [u8]) -> Self {
         Lexer {
             reader: SliceRead::new(input),
+            current_token: None,
         }
     }
 
     #[inline]
-    pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize) -> Option<&'json str> {
+    pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize, nested_array: bool) -> Option<&'json str> {
         let mut square_close_count = 1;
+        if nested_array {
+            square_close_count += 1;
+        }
         while !self.reader.is_at_end() {
             let current_index = self.reader.index;
             let (bytes, _) = self.reader.next_u64();

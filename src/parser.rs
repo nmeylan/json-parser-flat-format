@@ -74,7 +74,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 Token::String(key) => {
                     route.push(concat_string!("/", key));
                 }
-                _ => return Err("Expected object to have a key at this location".to_string())
+                _ => return Err(format!("Expected object to have a key at this location: {}, previous valid parsed value: {:?}", Self::concat_route(route),
+                                        target.last().map(|e| e.pointer.pointer.as_str()).unwrap_or("")))
             }
             self.next_token();
             if let Some(ref _token) = self.current_token {
@@ -82,7 +83,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     Some(ref token) if matches!(token, Token::Colon) => {
                         self.next_token();
                     }
-                    _ => return Err("Expected ':' after object key".to_string()),
+                    _ => return Err(format!("Expected ':' after object key at this location: {}, previous valid parsed value: {:?}", Self::concat_route(route),
+                                    target.last().map(|e| e.pointer.pointer.as_str()).unwrap_or("")))
                 }
             } else {
                 return Err("Expected ':' after object key".to_string());
@@ -124,6 +126,10 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 }
                 break;
             }
+            let mut nested_array = false;
+            if matches!(token, Token::SquareOpen) {
+                nested_array = true;
+            }
             if self.should_parse_array(&route, parse_option) {
                 if !self.state_seen_start_parse_at && parse_option.start_parse_at.is_some() {
                     self.state_seen_start_parse_at = true;
@@ -150,7 +156,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         i += 1;
                     }
                 } else {
-                    if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index) {
+                    if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
                         if pointer_index >= 0 {
                             let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].pointer);
                             target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position as usize), value: Some(array_str) };
@@ -159,7 +165,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     }
                 }
             } else {
-                if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index) {
+                if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
                     if pointer_index >= 0 {
                         let PointerKey { position, depth, .. } = target[pointer_index as usize].pointer;
                         target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(i), depth, position as usize), value: Some(array_str) };
@@ -369,6 +375,31 @@ mod tests {
 
         let result1 = JSONParser::parse(json, ParseOptions::default().parse_array(false).start_parse_at("/skills".to_string()).max_depth(1)).unwrap();
         let vec = &result1.json;
+    }
+
+    #[test]
+    fn parse_empty_object() {
+        let json = r#"{"a": {"c": [ ], "b": { }}}"#;
+        let result1 = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let vec = &result1.json;
+
+        assert_eq!(vec[0].pointer.pointer, "/a");
+        assert_eq!(vec[0].pointer.value_type, ValueType::Object(true));
+        assert_eq!(vec[1].pointer.pointer, "/a/c");
+        assert_eq!(vec[1].pointer.value_type, ValueType::Array(1));
+        assert_eq!(vec[2].pointer.pointer, "/a/b");
+        assert_eq!(vec[2].pointer.value_type, ValueType::Object(true));
+    }
+    #[test]
+    fn parse_array_of_array() {
+        let json = r#"{"data": [ [ "row-mnid.ac5t.8e6c", 0, 1583413338, null, "{ }", "2020"], [ "row-wgxs-vi8e-i2eq", "00000000-0000-0000-B3DA-6C4E63133CC6", 0 ] ]"#;
+        let result1 = JSONParser::parse(json, ParseOptions::default()).unwrap();
+        let vec = &result1.json;
+        assert_eq!(vec.len(), 12);
+
+        let result1 = JSONParser::parse(json, ParseOptions::default().parse_array(false)).unwrap();
+        let vec = &result1.json;
+        assert_eq!(vec.len(), 1);
     }
 
     #[test]
