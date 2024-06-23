@@ -166,16 +166,18 @@ macro_rules! change_depth {
                 let mut new_depth = entry.pointer.depth;
                 match entry.pointer.value_type {
                     ValueType::Array(_) => {
-                        should_parse = true && entry.pointer.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
+                        should_parse = entry.pointer.depth - previous_parse_result.depth_after_start_at == previous_parse_depth;
                         new_depth = entry.pointer.depth + 1;
                     }
                     ValueType::Object(parsed) => {
                         should_parse = !parsed && entry.pointer.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
+                        // println!("{} - should parse: {} (!{} && {} - {} <= {})", entry.pointer.pointer, should_parse, parsed, entry.pointer.depth, previous_parse_result.depth_after_start_at, previous_parse_depth);
                         is_object = true;
                         new_depth = entry.pointer.depth + 1;
                     }
                     _ => {}
                 };
+
                 if should_parse {
                     if let Some(ref v) = entry.value {
                         let mut lexer = Lexer::new(v.as_bytes());
@@ -191,7 +193,9 @@ macro_rules! change_depth {
                             match &res.json[0].pointer.value_type {
                                 ValueType::Array(size) => {
                                     previous_parse_result.json[i].pointer.value_type = ValueType::Array(*size);
-                                    res.json.swap_remove(0);
+                                    if res.json[0].pointer.pointer.eq("") {
+                                        res.json.swap_remove(0); // remove array empty pointer
+                                    }
                                 }
                                 _ => {}
                             }
@@ -200,6 +204,7 @@ macro_rules! change_depth {
                         if is_object {
                             previous_parse_result.json[i].pointer.value_type = ValueType::Object(true);
                         }
+
                         previous_parse_result.json.extend(res.json);
                     }
                 }
