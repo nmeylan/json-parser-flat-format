@@ -323,7 +323,10 @@ impl ParseResult<&str> {
 
 impl JSONParser {
     pub fn parse(input: &str, options: ParseOptions) -> Result<ParseResult<&str>, String> {
-        let mut lexer = Lexer::new(input.as_bytes());
+        JSONParser::parse_bytes(input.as_bytes(), options)
+    }
+    pub fn parse_bytes(input: &[u8], options: ParseOptions) -> Result<ParseResult<&str>, String> {
+        let mut lexer = Lexer::new(input);
         let mut parser = Parser::new(&mut lexer);
         parser.parse(&options, options.start_depth)
     }
