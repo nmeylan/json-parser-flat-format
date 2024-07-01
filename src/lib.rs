@@ -264,6 +264,13 @@ pub struct FlatJsonValue<V: Debug + Clone + AsRef<str> + GetBytes> {
 }
 
 
+impl<V: Debug + Clone + AsRef<str> + GetBytes>  Hash for FlatJsonValue<V> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pointer.hash(state);
+    }
+}
+
+
 #[derive(Debug, Clone)]
 pub struct ParseResult<V: Debug + Clone + AsRef<str> + GetBytes> {
     pub json: Vec<FlatJsonValue<V>>,
