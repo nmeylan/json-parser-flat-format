@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 
 use std::str::FromStr;
-use std::time::Instant;
 use crate::{FlatJsonValue, GetBytes, ValueType};
 
 #[cfg(feature = "indexmap")]
@@ -56,7 +55,6 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
     let mut root_is_obj = true;
 
     let sorted_data = data;
-    let _start = Instant::now();
     sorted_data.sort_unstable_by(|a, b|
         // deepest values will go first, because we will iterate in reverse order from the array to pop value
         match b.pointer.depth.cmp(&a.pointer.depth) {
