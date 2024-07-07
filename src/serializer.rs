@@ -2,12 +2,10 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 
 use std::str::FromStr;
+use indexmap::IndexSet;
 use crate::{FlatJsonValue, GetBytes, ValueType};
 
-#[cfg(feature = "indexmap")]
 type Map<K, V> = indexmap::IndexMap<K, V>;
-#[cfg(not(feature = "indexmap"))]
-type Map<K, V> = std::collections::HashMap<K, V>;
 
 #[derive(Debug)]
 pub enum Value<V> {
@@ -40,15 +38,15 @@ macro_rules! vec_matches {
     }
 }
 
-pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &mut Vec<FlatJsonValue<V>>) -> Value<V> {
+pub fn serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &mut IndexSet<FlatJsonValue<V>>) -> Value<V> {
     _serialize_to_json(data, 1)
 }
 
-pub fn serialize_to_json_with_option<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &mut Vec<FlatJsonValue<V>>, root_depth: u8) -> Value<V> {
+pub fn serialize_to_json_with_option<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &mut IndexSet<FlatJsonValue<V>>, root_depth: u8) -> Value<V> {
     _serialize_to_json(data, root_depth)
 }
 
-pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &mut Vec<FlatJsonValue<V>>, root_depth: u8) -> Value<V> {
+pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &mut IndexSet<FlatJsonValue<V>>, root_depth: u8) -> Value<V> {
     let mut root = Value::Object(new_map::<V>());
     let mut root_array = Value::Array(Vec::with_capacity(128));
 
@@ -250,12 +248,7 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
 
 #[inline]
 fn new_map<V>() -> Map<String, Value<V>> {
-    #[cfg(feature = "indexmap")]{
-        indexmap::IndexMap::new()
-    }
-    #[cfg(not(feature = "indexmap"))]{
-        std::collections::HashMap::new()
-    }
+    indexmap::IndexMap::new()
 }
 
 // Helper function to convert string values to JSON values based on ValueType
@@ -311,8 +304,9 @@ impl<V: ToString + AsRef<str>> Value<V> {
 }
 
 #[cfg(test)]
-#[cfg(feature = "indexmap")] // to ease testing we use indexmap to have deterministic output
 mod tests {
+    use indexmap::IndexSet;
+    use indexmap::set::MutableValues;
     use crate::{FlatJsonValue, JSONParser, ParseOptions, PointerKey, ValueType};
     use crate::serializer::{serialize_to_json, serialize_to_json_with_option};
 
@@ -362,7 +356,7 @@ mod tests {
 }"#;
 
         let mut vec = JSONParser::parse(json, ParseOptions::default()).unwrap().json;
-        vec.push(FlatJsonValue {
+        vec.insert(FlatJsonValue {
             pointer: PointerKey {
                 pointer: "/damageFlags/fire".to_string(),
                 value_type: ValueType::Bool,
@@ -407,7 +401,7 @@ mod tests {
             JSONParser::parse(json, ParseOptions::default()).unwrap()
         };
         let mut vec = result.json;
-        vec[0].value = Some("12");
+        vec.get_index_mut2(0).unwrap().value = Some("12");
         let value = serialize_to_json(&mut vec);
         println!("{:?}", value.to_json());
     }
@@ -644,14 +638,14 @@ mod tests {
         // Test partial serialization of nested object
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let vec = res.json;
-        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/0")).cloned().collect::<Vec<FlatJsonValue<&str>>>();
+        let mut vec: IndexSet<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/0")).cloned().collect::<IndexSet<FlatJsonValue<&str>>>();
         let value = serialize_to_json_with_option(&mut vec, 3);
         assert_eq!(value.to_json().replace(' ', ""), json_depth_2[1].value.unwrap().replace(' ', ""));
 
         // Test partial serialization of nested object
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let vec = res.json;
-        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/1")).cloned().collect::<Vec<FlatJsonValue<&str>>>();
+        let mut vec: IndexSet<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 3 && entry.pointer.pointer.starts_with("/skills/1")).cloned().collect::<IndexSet<FlatJsonValue<&str>>>();
         let value = serialize_to_json_with_option(&mut vec, 3);
         assert_eq!(value.to_json().replace(' ', ""), json_depth_2[2].value.unwrap().replace(' ', ""));
 
@@ -662,8 +656,8 @@ mod tests {
         // Test partial serialization of nested parsed array
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let vec = res.json;
-        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 4 && entry.pointer.pointer.starts_with("/skills/1/bonusToSelf")).cloned().collect::<Vec<FlatJsonValue<&str>>>();
-        vec.push(FlatJsonValue {
+        let mut vec: IndexSet<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 4 && entry.pointer.pointer.starts_with("/skills/1/bonusToSelf")).cloned().collect::<IndexSet<FlatJsonValue<&str>>>();
+        vec.insert(FlatJsonValue {
             pointer: PointerKey {
                 pointer: "".to_string(),
                 value_type: ValueType::Array(10),
@@ -678,8 +672,8 @@ mod tests {
         // Test partial serialization of nested parsed array under object
         let res = JSONParser::parse(json, ParseOptions::default()).unwrap();
         let vec = res.json;
-        let mut vec: Vec<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 5 && entry.pointer.pointer.starts_with("/skills/1/requires/spCostPerLevel")).cloned().collect::<Vec<FlatJsonValue<&str>>>();
-        vec.push(FlatJsonValue {
+        let mut vec: IndexSet<FlatJsonValue<&str>> = vec.iter().filter(|entry| entry.pointer.depth >= 5 && entry.pointer.pointer.starts_with("/skills/1/requires/spCostPerLevel")).cloned().collect::<IndexSet<FlatJsonValue<&str>>>();
+        vec.insert(FlatJsonValue {
             pointer: PointerKey {
                 pointer: "".to_string(),
                 value_type: ValueType::Array(10),

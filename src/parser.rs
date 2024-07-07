@@ -1,5 +1,7 @@
 
 use std::mem;
+use indexmap::IndexSet;
+use indexmap::set::MutableValues;
 use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResult, PointerFragment, PointerKey, ValueType};
 use crate::lexer::{Lexer, Token};
 
@@ -21,7 +23,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
     }
 
     pub fn parse(&mut self, parse_option: &ParseOptions, depth: u8) -> Result<ParseResult<&'json str>, String> {
-        let mut values: Vec<FlatJsonValue<&'json str>> = Vec::with_capacity(64);
+        let mut values: IndexSet<FlatJsonValue<&'json str>> = IndexSet::with_capacity(64);
         self.next_token();
         let mut position = 0_usize;
         if let Some(current_token) = self.current_token.as_ref() {
@@ -46,7 +48,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 let i = 0;
                 let pointer_index = values.len() as isize;
 
-                values.push(FlatJsonValue { pointer: PointerKey::from_pointer("".to_string(), ValueType::Array(0), depth, i), value: None });
+                values.insert(FlatJsonValue { pointer: PointerKey::from_pointer("".to_string(), ValueType::Array(0), depth, i), value: None });
                 self.process_array(&mut pointer_fragment, &mut values, depth, i + 1, parse_option, &mut position, pointer_index)?;
                 return Ok(ParseResult {
                     json: values,
@@ -63,7 +65,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
         }
     }
 
-    fn process_object(&mut self, route: &mut PointerFragment, target: &mut Vec<FlatJsonValue<&'json str>>, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize) -> Result<(), String> {
+    fn process_object(&mut self, route: &mut PointerFragment, target: &mut IndexSet<FlatJsonValue<&'json str>>, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize) -> Result<(), String> {
         if self.max_depth < depth as usize {
             self.max_depth = depth as usize;
         }
@@ -117,15 +119,15 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
         Ok(())
     }
 
-    fn process_array(&mut self, route: &mut PointerFragment, target: &mut Vec<FlatJsonValue<&'json str>>, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize, pointer_index: isize) -> Result<(), String> {
+    fn process_array(&mut self, route: &mut PointerFragment, target: &mut IndexSet<FlatJsonValue<&'json str>>, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize, pointer_index: isize) -> Result<(), String> {
         let array_start_index = self.lexer.reader_index() - 1;
         self.next_token();
         let mut i = 1;
         while let Some(ref token) = self.current_token {
             if matches!(token, Token::SquareClose) {
                 if pointer_index >= 0 {
-                    let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].pointer);
-                    target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position), value: None };
+                    let PointerKey { pointer, position, depth, .. } = mem::take(&mut target.get_index_mut2(pointer_index as usize).unwrap().pointer);
+                    *target.get_index_mut2(pointer_index as usize).unwrap() = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position), value: None };
                 }
                 break;
             }
@@ -160,15 +162,15 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     }
                 } else if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
                     if pointer_index >= 0 {
-                        let PointerKey { pointer, position, depth, .. } = mem::take(&mut target[pointer_index as usize].pointer);
-                        target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position), value: Some(array_str) };
+                        let PointerKey { pointer, position, depth, .. } = mem::take(&mut target.get_index_mut2(pointer_index as usize).unwrap().pointer);
+                        *target.get_index_mut2(pointer_index as usize).unwrap() = FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(i), depth, position), value: Some(array_str) };
                     }
                     break;
                 }
             } else if let Some(array_str) = self.lexer.consume_string_until_end_of_array(array_start_index, nested_array) {
                 if pointer_index >= 0 {
-                    let PointerKey { position, depth, .. } = target[pointer_index as usize].pointer;
-                    target[pointer_index as usize] = FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(i), depth, position), value: Some(array_str) };
+                    let PointerKey { position, depth, .. } = target.get_index_mut2(pointer_index as usize).unwrap().pointer;
+                    *target.get_index_mut2(pointer_index as usize).unwrap() = FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(i), depth, position), value: Some(array_str) };
                 }
                 break;
             }
@@ -176,7 +178,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
         Ok(())
     }
 
-    fn parse_value(&mut self, route: &mut PointerFragment, target: &mut Vec<FlatJsonValue<&'json str>>, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize) -> Result<(), String> {
+    fn parse_value(&mut self, route: &mut PointerFragment, target: &mut IndexSet<FlatJsonValue<&'json str>>, depth: u8, count: usize, parse_option: &ParseOptions, position: &mut usize) -> Result<(), String> {
         match self.current_token {
             Some(ref token) => match token {
                 Token::CurlyOpen => {
@@ -185,9 +187,9 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         if let Some(object_str) = self.lexer.consume_string_until_end_of_object(true) {
                             *position += 1;
                             if parse_option.keep_object_raw_data || depth - self.depth_after_start_at == parse_option.max_depth {
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(depth - self.depth_after_start_at < parse_option.max_depth), depth, *position), value: Some(object_str) });
+                                target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(depth - self.depth_after_start_at < parse_option.max_depth), depth, *position), value: Some(object_str) });
                             } else {
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(true), depth, *position), value: None });
+                                target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(true), depth, *position), value: None });
                             }
                             self.lexer.set_reader_index(start);
                             self.process_object(route, target, depth + 1, count, parse_option, position)?;
@@ -206,7 +208,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     if depth - self.depth_after_start_at <= parse_option.max_depth {
                         *position += 1;
                         pointer_index = target.len() as isize;
-                        target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(0), depth, *position), value: None });
+                        target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(0), depth, *position), value: None });
                     }
                     self.process_array(route, target, depth + 1, count, parse_option, position, pointer_index)?;
                     Ok(())
@@ -217,11 +219,11 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
                                 *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::String, depth, *position), value: Some(value) });
+                                target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::String, depth, *position), value: Some(value) });
                             }
                         } else {
                             *position += 1;
-                            target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::String, depth, *position), value: Some(value) });
+                            target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::String, depth, *position), value: Some(value) });
                         }
                     }
 
@@ -233,11 +235,11 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
                                 *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), value: Some(value) });
+                                target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), value: Some(value) });
                             }
                         } else {
                             *position += 1;
-                            target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), value: Some(value) });
+                            target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), value: Some(value) });
                         }
                     }
                     Ok(())
@@ -248,11 +250,11 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
                                 *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), value: Some(value) });
+                                target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), value: Some(value) });
                             }
                         } else {
                             *position += 1;
-                            target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), value: Some(value) });
+                            target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), value: Some(value) });
                         }
                     }
                     Ok(())
@@ -263,11 +265,11 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         if let Some(ref start_parse_at) = parse_option.start_parse_at {
                             if pointer.starts_with(start_parse_at) {
                                 *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), value: None });
+                                target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), value: None });
                             }
                         } else {
                             *position += 1;
-                            target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), value: None });
+                            target.insert(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), value: None });
                         }
                     }
                     Ok(())

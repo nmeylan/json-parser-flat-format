@@ -1,6 +1,7 @@
 use std::fmt::{Debug};
 use std::hash::{Hash, Hasher};
-
+use indexmap::{Equivalent, IndexSet};
+use indexmap::set::MutableValues;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::serializer::{serialize_to_json, Value};
@@ -159,7 +160,7 @@ macro_rules! change_depth {
         if previous_parse_depth < parse_options.max_depth {
             let previous_len = previous_parse_result.json.len();
             for i in 0..previous_len {
-                let entry = &previous_parse_result.json[i];
+                let entry = &previous_parse_result.json.get_index(i).unwrap();
                 let mut should_parse = false;
                 let mut is_object = false;
                 let mut new_depth = entry.pointer.depth;
@@ -193,9 +194,9 @@ macro_rules! change_depth {
                         if res.json.len() > 0 {
                             match &res.json[0].pointer.value_type {
                                 ValueType::Array(size) => {
-                                    previous_parse_result.json[i].pointer.value_type = ValueType::Array(*size);
+                                    previous_parse_result.json.get_index_mut2(i).unwrap().pointer.value_type = ValueType::Array(*size);
                                     if res.json[0].pointer.pointer.eq("") {
-                                        res.json.swap_remove(0); // remove array empty pointer
+                                        res.json.swap_remove_index(0); // remove array empty pointer
                                     }
                                 }
                                 _ => {}
@@ -203,7 +204,7 @@ macro_rules! change_depth {
                         }
 
                         if is_object {
-                            previous_parse_result.json[i].pointer.value_type = ValueType::Object(true);
+                            previous_parse_result.json.get_index_mut2(i).unwrap().pointer.value_type = ValueType::Object(true);
                         }
 
                         previous_parse_result.json.extend(res.json);
@@ -246,11 +247,18 @@ pub enum ValueType {
 type PointerFragment = Vec<String>;
 
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq)]
 pub struct FlatJsonValue<V: Debug + Clone + AsRef<str> + GetBytes> {
     pub pointer: PointerKey,
     pub value: Option<V>,
 }
+
+impl <V: Debug + Clone + AsRef<str> + GetBytes>PartialEq for FlatJsonValue<V> {
+    fn eq(&self, other: &Self) -> bool {
+        self.pointer.eq(&other.pointer)
+    }
+}
+
 
 
 impl<V: Debug + Clone + AsRef<str> + GetBytes>  Hash for FlatJsonValue<V> {
@@ -262,7 +270,7 @@ impl<V: Debug + Clone + AsRef<str> + GetBytes>  Hash for FlatJsonValue<V> {
 
 #[derive(Debug, Clone)]
 pub struct ParseResult<V: Debug + Clone + AsRef<str> + GetBytes> {
-    pub json: Vec<FlatJsonValue<V>>,
+    pub json: IndexSet<FlatJsonValue<V>>,
     pub max_json_depth: usize,
     pub parsing_max_depth: u8,
     pub started_parsing_at: Option<String>,
@@ -299,10 +307,10 @@ impl ParseResult<&str> {
         }
     }
     pub fn to_owned(self) -> ParseResult<String> {
-        let mut transformed_vec: Vec<FlatJsonValue<String>> = Vec::with_capacity(self.json.len());
+        let mut transformed_vec: IndexSet<FlatJsonValue<String>> = IndexSet::with_capacity(self.json.len());
 
         for entry in self.json {
-            transformed_vec.push(FlatJsonValue { pointer: entry.pointer, value: entry.value.map(|s| s.to_owned()) });
+            transformed_vec.insert(FlatJsonValue { pointer: entry.pointer, value: entry.value.map(|s| s.to_owned()) });
         }
         ParseResult::<String> {
             json: transformed_vec,
@@ -332,11 +340,11 @@ impl JSONParser {
     change_depth!(String, change_depth_owned, |r: ParseResult<&str>| r.to_owned());
 
 
-    pub fn serialize<'a>(data: &mut Vec<FlatJsonValue<&'a str>>) -> Value<&'a str> {
+    pub fn serialize<'a>(data: &mut IndexSet<FlatJsonValue<&'a str>>) -> Value<&'a str> {
         serialize_to_json(data)
     }
 
-    pub fn serialize_owned(data: &mut Vec<FlatJsonValue<String>>) -> Value<String> {
+    pub fn serialize_owned(data: &mut IndexSet<FlatJsonValue<String>>) -> Value<String> {
         serialize_to_json(data)
     }
 
