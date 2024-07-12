@@ -280,12 +280,18 @@ impl<V: ToString + AsRef<str>> Value<V> {
     fn _to_json(&self, depth: usize) -> String {
         match self {
             Value::Object(obj) => {
-                let members: Vec<String> = obj.iter().map(|(k, v)| format!("{:indent$}\"{}\": {}", "", k, v._to_json(depth + 1), indent = depth * 2)).collect();
+                let members: Vec<String> = obj.iter()
+                    .filter(|(_, v)| !matches!(v, Value::Null))
+                    .map(|(k, v)| {
+                    format!("{:indent$}\"{}\": {}", "", k, v._to_json(depth + 1), indent = depth * 2)
+                }).collect();
                 format!("{{\n{}\n{:indent$}}}", members.join(",\n"), "", indent = (depth - 1) * 2)
             }
             Value::Array(arr) => {
                 let mut contains_nested_array = false;
-                let elements: Vec<String> = arr.iter().map(|v| {
+                let elements: Vec<String> = arr.iter()
+                    .filter(|v| !matches!(v, Value::Null))
+                    .map(|v| {
                     if matches!(v, Value::Array(_)) || matches!(v, Value::Object(_)) {
                         contains_nested_array = true;
                         format!("{:indent$}{}", "", v._to_json(depth + 1), indent = (depth) * 2)
@@ -334,10 +340,24 @@ mod tests {
     }
   }
 }"#;
+let expected =
+            r#"{
+  "id": 1,
+  "maxLevel": 99,
+  "name": "NV_BASIC",
+  "aaa": true,
+  "flags": {
+    "a": true,
+    "b": false,
+    "c": {
+      "nested": "Oui"
+    }
+  }
+}"#;
 
         let mut vec = JSONParser::parse(json, ParseOptions::default()).unwrap().json;
         let value = serialize_to_json(&mut vec);
-        assert_eq!(value.to_json(), json);
+        assert_eq!(value.to_json(), expected);
     }
     #[test]
     fn missing_parent() {
@@ -355,7 +375,6 @@ mod tests {
   "maxLevel": 99,
   "name": "NV_BASIC",
   "aaa": true,
-  "bbb": null,
   "damageFlags": {
     "fire": true
   }
@@ -432,7 +451,6 @@ mod tests {
     "maxLevel": 99,
     "name": "NV_BASIC",
     "aaa": true,
-    "bbb": null,
     "flags": {
       "a": true,
       "b": false,
