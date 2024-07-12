@@ -387,6 +387,7 @@ let expected =
                 value_type: ValueType::Bool,
                 depth: 2,
                 position: 0,
+                column_id: 0,
             },
             value: Some("true"),
         });
@@ -687,6 +688,7 @@ let expected =
                 value_type: ValueType::Array(10),
                 depth: 0,
                 position: 0,
+                column_id: 0,
             },
             value: None,
         });
@@ -703,6 +705,7 @@ let expected =
                 value_type: ValueType::Array(10),
                 depth: 0,
                 position: 0,
+                column_id: 0,
             },
             value: None,
         });

@@ -111,6 +111,7 @@ pub struct PointerKey {
     pub value_type: ValueType,
     pub depth: u8,    // depth of the pointed value in the json
     pub position: usize, // position on the original json
+    pub column_id: usize, // can be used to map to external object
 }
 
 impl PartialEq<Self> for PointerKey {
@@ -224,7 +225,8 @@ impl PointerKey {
             pointer,
             value_type,
             depth,
-            position
+            position,
+            column_id: 0,
         }
     }
 }
