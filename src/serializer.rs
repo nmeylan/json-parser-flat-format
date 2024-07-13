@@ -16,6 +16,7 @@ pub enum Value<V> {
     Array(Vec<Value<V>>),
     ArraySerialized(V),
     Number(f64),
+    Integer(i64),
     String(V),
     Bool(bool),
     Null,
@@ -262,7 +263,13 @@ fn new_map<V>(capacity: usize) -> Map<String, Value<V>> {
 fn value_to_json<V: Debug + Clone + AsRef<str> + GetBytes>(value: Option<V>, value_type: &ValueType) -> Value<V> {
     if let Some(value) = value {
         match value_type {
-            ValueType::Number => value.as_ref().parse::<f64>().map(Value::Number).unwrap_or(Value::Null),
+            ValueType::Number => {
+                if let Ok(n) = value.as_ref().parse::<i64>() {
+                    Value::Integer(n)
+                } else {
+                    value.as_ref().parse::<f64>().map(Value::Number).unwrap_or(Value::Null)
+                }
+            },
             ValueType::String => Value::String(value),
             ValueType::Bool => Value::Bool(value.as_ref() == "true" || value.as_ref() == "1"),
             ValueType::Null => Value::Null,
@@ -306,6 +313,7 @@ impl<V: ToString + AsRef<str>> Value<V> {
                 }
             }
             Value::Number(num) => num.to_string(),
+            Value::Integer(num) => num.to_string(),
             Value::String(s) => format!("\"{}\"", s.as_ref().replace('\"', "\\\"")),
             Value::Bool(b) => b.to_string(),
             Value::Null => "null".to_string(),
@@ -1486,6 +1494,7 @@ impl<V: serde::ser::Serialize + AsRef<str>> serde::ser::Serialize for Value<V> {
                 RawValue::from_string(v.as_ref().to_string()).unwrap().serialize(serializer)
             },
             Value::Number(n) => serializer.serialize_f64(*n),
+            Value::Integer(n) => serializer.serialize_i64(*n),
             Value::String(v) => v.serialize(serializer),
             Value::Bool(b) => serializer.serialize_bool(*b),
             Value::Null => serializer.serialize_unit(),
