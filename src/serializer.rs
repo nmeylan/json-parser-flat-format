@@ -1301,4 +1301,194 @@ let expected =
         let value = serialize_to_json(&mut vec);
         assert_eq!(value.to_json(), json);
     }
+
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde_serialization() {
+        let json =
+            r#"{
+  "skills": [
+    {
+      "description": "Basic Skill",
+      "id": 1,
+      "maxLevel": 9,
+      "name": "NV_BASIC",
+      "basicSkillPerLevel": [{
+          "level": 1,
+          "value": "Trade"
+        },
+        {
+          "level": 2,
+          "value": "Emoticon"
+        },
+        {
+          "level": 3,
+          "value": "Sit"
+        },
+        {
+          "level": 4,
+          "value": "Chat Room (create)"
+        },
+        {
+          "level": 5,
+          "value": "Party (join)"
+        },
+        {
+          "level": 6,
+          "value": "Kafra Storage"
+        },
+        {
+          "level": 7,
+          "value": "Party (create)"
+        },
+        {
+          "level": 8,
+          "value": "-"
+        },
+        {
+          "level": 9,
+          "value": "Job Change"
+        }
+      ],
+      "targetType": "Passive"
+    },
+    {
+      "description": "Sword Mastery",
+      "id": 2,
+      "maxLevel": 10,
+      "name": "SM_SWORD",
+      "type": "Weapon",
+      "bonusToSelf": [{
+          "level": 1,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 4
+          }
+        },
+        {
+          "level": 2,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 8
+          }
+        },
+        {
+          "level": 3,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 12
+          }
+        },
+        {
+          "level": 4,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 16
+          }
+        },
+        {
+          "level": 5,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 20
+          }
+        },
+        {
+          "level": 6,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 24
+          }
+        },
+        {
+          "level": 7,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 28
+          }
+        },
+        {
+          "level": 8,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 32
+          }
+        },
+        {
+          "level": 9,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 36
+          }
+        },
+        {
+          "level": 10,
+          "value": {
+            "bonus": "MasteryDamageUsingWeaponType",
+            "value": "1hSword",
+            "value2": 40
+          }
+        }
+      ],
+      "damageFlags": {
+        "noDamage": true
+      },
+      "targetType": "Passive"
+    }
+  ]
+}"#;
+
+        let res = JSONParser::parse(json, ParseOptions::default().max_depth(2).start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
+        let mut vec = res.json;
+        let value = serialize_to_json(&mut vec);
+        let res = serde_json::to_string_pretty(&value);
+        assert_eq!(res.unwrap(), json);
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<V: serde::ser::Serialize + AsRef<str>> serde::ser::Serialize for Value<V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        use serde_json::value::RawValue;
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self {
+            Value::Object(map) => {
+                let mut map_serializer = serializer.serialize_map(Some(map.len()))?;
+                for (k, v) in map {
+                    map_serializer.serialize_entry(k, v)?;
+                }
+                map_serializer.end()
+            }
+            Value::ObjectSerialized(v) => {
+                RawValue::from_string(v.as_ref().to_string()).unwrap().serialize(serializer)
+            },
+            Value::Array(vec) => {
+                let mut seq_serializer = serializer.serialize_seq(Some(vec.len()))?;
+                for item in vec {
+                    seq_serializer.serialize_element(item)?;
+                }
+                seq_serializer.end()
+            }
+            Value::ArraySerialized(v) => {
+                RawValue::from_string(v.as_ref().to_string()).unwrap().serialize(serializer)
+            },
+            Value::Number(n) => serializer.serialize_f64(*n),
+            Value::String(v) => v.serialize(serializer),
+            Value::Bool(b) => serializer.serialize_bool(*b),
+            Value::Null => serializer.serialize_unit(),
+        }
+    }
 }
