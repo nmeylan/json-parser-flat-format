@@ -49,7 +49,7 @@ pub fn serialize_to_json_with_option<'a, V: Debug + Clone + AsRef<str> + GetByte
 }
 
 pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &mut Vec<FlatJsonValue<V>>, root_depth: u8) -> Value<V> {
-    let mut root = Value::Object(new_map::<V>());
+    let mut root = Value::Object(new_map::<V>(10));
     let mut root_array = Value::Array(Vec::with_capacity(128));
 
     let mut root_is_obj = true;
@@ -85,9 +85,9 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                         key.pointer.splitn(root_depth as usize + 1, '/').last().unwrap().to_owned()
                     };
                     match key.value_type {
-                        ValueType::Object(parsed) => {
+                        ValueType::Object(parsed, elements) => {
                             if parsed {
-                                obj.insert(pointer.to_owned(), Value::Object(new_map()));
+                                obj.insert(pointer.to_owned(), Value::Object(new_map(elements)));
                             } else {
                                 obj.insert(pointer.to_owned(), Value::ObjectSerialized(value.unwrap()));
                             }
@@ -104,9 +104,9 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                 }
                 Value::Array(array) => {
                     match key.value_type {
-                        ValueType::Object(parsed) => {
+                        ValueType::Object(parsed, elements) => {
                             if parsed {
-                                array.push(Value::Object(new_map()));
+                                array.push(Value::Object(new_map(elements)));
                             } else {
                                 array.push(Value::ObjectSerialized(value.unwrap()));
                             }
@@ -182,7 +182,7 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                             if obj.contains_key(s) {
                                 current_parent = obj.get_mut(s).unwrap();
                             } else {
-                                obj.insert(s.to_owned(), Value::Object(new_map()));
+                                obj.insert(s.to_owned(), Value::Object(new_map(10)));
                                 current_parent = obj.get_mut(s).unwrap();
                             }
                         }
@@ -200,9 +200,9 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
             match current_parent {
                 Value::Object(obj) => {
                     match key.value_type {
-                        ValueType::Object(parsed) => {
+                        ValueType::Object(parsed, elements) => {
                             if parsed {
-                                obj.insert(k.to_owned(), Value::Object(new_map()));
+                                obj.insert(k.to_owned(), Value::Object(new_map(elements)));
                             } else {
                                 obj.insert(k.to_owned(), Value::ObjectSerialized(value.unwrap()));
                             }
@@ -219,9 +219,9 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                 }
                 Value::Array(array) => {
                     match key.value_type {
-                        ValueType::Object(parsed) => {
+                        ValueType::Object(parsed, elements) => {
                             if parsed {
-                                array.push(Value::Object(new_map()));
+                                array.push(Value::Object(new_map(elements)));
                             } else {
                                 array.push(Value::ObjectSerialized(value.unwrap()));
                             }
@@ -249,9 +249,9 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
 }
 
 #[inline]
-fn new_map<V>() -> Map<String, Value<V>> {
+fn new_map<V>(capacity: usize) -> Map<String, Value<V>> {
     #[cfg(feature = "indexmap")]{
-        indexmap::IndexMap::new()
+        indexmap::IndexMap::with_capacity(capacity)
     }
     #[cfg(not(feature = "indexmap"))]{
         std::collections::HashMap::new()

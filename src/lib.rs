@@ -170,7 +170,7 @@ macro_rules! change_depth {
                         // println!("{}({:?}) - should parse: {} ({} - {} <= {})", entry.pointer.pointer, entry.pointer.value_type, should_parse, entry.pointer.depth, previous_parse_result.depth_after_start_at, previous_parse_depth);
                         new_depth = entry.pointer.depth + 1;
                     }
-                    ValueType::Object(parsed) => {
+                    ValueType::Object(parsed, elements_count) => {
                         should_parse = !parsed && entry.pointer.depth - previous_parse_result.depth_after_start_at <= previous_parse_depth;
                         // println!("{}({:?}) - should parse: {} (!{} && {} - {} <= {})", entry.pointer.pointer, entry.pointer.value_type, should_parse, parsed, entry.pointer.depth, previous_parse_result.depth_after_start_at, previous_parse_depth);
                         is_object = true;
@@ -204,7 +204,9 @@ macro_rules! change_depth {
                         }
 
                         if is_object {
-                            previous_parse_result.json[i].pointer.value_type = ValueType::Object(true);
+                            let root_depth = previous_parse_result.json[i].pointer.depth + 1;
+                            let  elements_count = res.json.iter().filter(|e| e.pointer.depth == root_depth).count();
+                            previous_parse_result.json[i].pointer.value_type = ValueType::Object(true, elements_count);
                         }
 
                         previous_parse_result.json.extend(res.json);
@@ -235,7 +237,7 @@ impl PointerKey {
 #[derive(Default)]
 pub enum ValueType {
     Array(usize),
-    Object(bool), // parsed or not
+    Object(bool, usize), // parsed or not, number of elements
     Number,
     String,
     Bool,
