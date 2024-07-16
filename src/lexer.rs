@@ -114,18 +114,24 @@ impl<'json> Lexer<'json> {
         while !self.reader.is_at_end() {
             let current_index = self.reader.index;
             let (bytes, _) = self.reader.next_u64();
-            let comparison = MASK_CLOSE_SQUARE ^ bytes;
-            let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
-            if high_bit_mask1 == 0 {
-                let comparison = MASK_OPEN_SQUARE ^ bytes;
-                let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
-                if high_bit_mask1 == 0 {
-                    continue;
-                } else {
-                    self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
-                }
+            let comparison_square_close = MASK_CLOSE_SQUARE ^ bytes;
+            let comparison_square_open = MASK_OPEN_SQUARE ^ bytes;
+            let high_bit_mask_square_close = (((comparison_square_close >> 1) | 0x8080808080808080) - comparison_square_close) & 0x8080808080808080;
+            let high_bit_mask_square_open = (((comparison_square_open >> 1) | 0x8080808080808080) - comparison_square_open) & 0x8080808080808080;
+            if high_bit_mask_square_close == 0 && high_bit_mask_square_open == 0 {
+                continue;
             } else {
-                self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
+                let mut index = 0;
+                if high_bit_mask_square_close != 0 {
+                    index = (high_bit_mask_square_close.trailing_zeros() >> 3) as usize;
+                }
+                if high_bit_mask_square_open != 0 {
+                    let open_index = (high_bit_mask_square_open.trailing_zeros() >> 3) as usize;
+                    if open_index < index {
+                        index = open_index;
+                    }
+                }
+                self.reader.index = current_index + index;
             }
             match self.reader.next()? {
                 b'[' => square_close_count += 1,
@@ -160,18 +166,25 @@ impl<'json> Lexer<'json> {
         while !self.reader.is_at_end() {
             let current_index = self.reader.index;
             let (bytes, _) = self.reader.next_u64();
-            let comparison = MASK_CLOSE_CURLY ^ bytes;
-            let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
-            if high_bit_mask1 == 0 {
-                let comparison = MASK_OPEN_CURLY ^ bytes;
-                let high_bit_mask1 = (((comparison >> 1) | 0x8080808080808080) - comparison) & 0x8080808080808080;
-                if high_bit_mask1 == 0 {
-                    continue;
-                } else {
-                    self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
-                }
+            let comparison_curly_close = MASK_CLOSE_CURLY ^ bytes;
+            let comparison_curly_open = MASK_OPEN_CURLY ^ bytes;
+            let high_bit_mask_curly_close = (((comparison_curly_close >> 1) | 0x8080808080808080) - comparison_curly_close) & 0x8080808080808080;
+            let high_bit_mask_curly_open = (((comparison_curly_open >> 1) | 0x8080808080808080) - comparison_curly_open) & 0x8080808080808080;
+
+            if high_bit_mask_curly_close == 0 && high_bit_mask_curly_open == 0 {
+                continue;
             } else {
-                self.reader.index = current_index + (high_bit_mask1.trailing_zeros() >> 3) as usize;
+                let mut index = 0;
+                if high_bit_mask_curly_close != 0 {
+                    index = (high_bit_mask_curly_close.trailing_zeros() >> 3) as usize;
+                }
+                if high_bit_mask_curly_open != 0 {
+                    let open_index = (high_bit_mask_curly_open.trailing_zeros() >> 3) as usize;
+                    if open_index < index {
+                        index = open_index;
+                    }
+                }
+                self.reader.index = current_index + index;
             }
 
             match self.reader.next()? {
@@ -206,7 +219,7 @@ impl<'json> Lexer<'json> {
                 b'-' | b'0' | b'1' | b'2' | b'3' | b'4' | b'5' | b'6' | b'7' | b'8' | b'9' => {
                     let start = self.reader.index - 1;
                     while let Some(b) = self.reader.next() {
-                        if !((0x30..=0x39).contains(&b) || b == b'.') {
+                        if !((0x30..=0x39).contains(&b) || b == b'.' || b == b'e' || b == b'+' || b == b'-') {
                             break;
                         }
                     }
@@ -234,8 +247,8 @@ impl<'json> Lexer<'json> {
                     let s = string_from_bytes(&self.reader.slice[start..self.reader.index - 1])?;
                     return Some(Token::String(s));
                 }
-                b't' if self.reader.match_pattern(b"rue") => return Some(Token::Boolean(string_from_bytes(&self.reader.slice[self.reader.index-4..self.reader.index])?)),
-                b'f' if self.reader.match_pattern(b"alse") => return Some(Token::Boolean(string_from_bytes(&self.reader.slice[self.reader.index-5..self.reader.index])?)),
+                b't' if self.reader.match_pattern(b"rue") => return Some(Token::Boolean(string_from_bytes(&self.reader.slice[self.reader.index - 4..self.reader.index])?)),
+                b'f' if self.reader.match_pattern(b"alse") => return Some(Token::Boolean(string_from_bytes(&self.reader.slice[self.reader.index - 5..self.reader.index])?)),
                 b'n' if self.reader.match_pattern(b"ull") => return Some(Token::Null),
                 _ => {}
             }

@@ -112,7 +112,13 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     // break;
                 }
                 None => break,
-                _ => return Err(format!("Expected ',' or '}}' or ']' after object value, got: {:?}", self.current_token)),
+                _ => {
+                    let mut index = 0;
+                    if target.len() > 0 {
+                        index = target.len() - 1;
+                    }
+                    return Err(format!("Expected ',' or '}}' or ']' after object value, got: {:?}, previous nodes {:?}", self.current_token, target[index]))
+                },
             }
             route.pop();
         }
@@ -308,7 +314,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
 
 #[cfg(test)]
 mod tests {
-    
+    use std::fs;
+    use std::path::Path;
     use crate::{JSONParser, ParseOptions, ValueType};
 
     #[test]
@@ -922,5 +929,21 @@ mod tests {
         let vec = &res.json;
         // vec.iter().for_each(|(k, v)| println!("{} {} {}", k.pointer, k.depth, v.is_some()));
         assert_eq!(vec.len(), 31);
+    }
+
+    #[test]
+    fn parse_nested_array() {
+        let json = r#"{"panels": {"a":1, "b": ["a1": 11, "tags":[],"type": "type": "dashboard"]},"annotations":{"x":{},"y": {}}}"#;
+        let mut res = JSONParser::parse(json, ParseOptions::default().parse_array(false)).unwrap();
+        let vec = &res.json;
+        // vec.iter().for_each(|v| println!("{:?} -> {:?}", v.pointer, v.value));
+    }
+    #[test]
+    fn parse_grafana_dashboard() {
+        let path = Path::new("examples/grafana.json");
+        let mut json = fs::read_to_string(path).unwrap();
+        let mut res = JSONParser::parse(json.as_str(), ParseOptions::default().start_parse_at("/panels".to_string()).parse_array(false)).unwrap();
+        let vec = &res.json;
+        // vec.iter().for_each(|v| println!("{:?} -> {:?}", v.pointer, v.value));
     }
 }

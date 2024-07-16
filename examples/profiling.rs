@@ -84,8 +84,8 @@ fn main() {
     println!("Serialization took {}ms", start.elapsed().as_millis());
     let start = Instant::now();
     // value.to_json();
-    let res = serde_json::to_string_pretty(&value);
-    println!("Serialization as string took {}ms", start.elapsed().as_millis());
+    // let res = serde_json::to_string_pretty(&value);
+    // println!("Serialization as string took {}ms", start.elapsed().as_millis());
     // let mut sorted_data = result.json;
     // sorted_data.sort_by(|(a, _), (b, _)|
     //     a.pointer.cmp(&b.pointer));
