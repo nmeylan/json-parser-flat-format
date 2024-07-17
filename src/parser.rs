@@ -7,6 +7,8 @@ pub struct Parser<'a, 'json> {
     lexer: &'a mut Lexer<'json>,
     current_token: Option<Token<'json>>,
     pub state_seen_start_parse_at: bool,
+    pub start_parse_at_index_start: usize,
+    pub start_parse_at_index_end: usize,
     pub max_depth: usize,
     pub depth_after_start_at: u8,
 }
@@ -14,10 +16,10 @@ pub struct Parser<'a, 'json> {
 
 impl<'a, 'json: 'a> Parser<'a, 'json> {
     pub fn new(lexer: &'a mut Lexer<'json>) -> Self {
-        Self { lexer, current_token: None, state_seen_start_parse_at: false, max_depth: 0, depth_after_start_at: 0 }
+        Self { lexer, current_token: None, state_seen_start_parse_at: false, start_parse_at_index_start: 0, start_parse_at_index_end: 0, max_depth: 0, depth_after_start_at: 0 }
     }
     pub fn new_for_change_depth(lexer: &'a mut Lexer<'json>, depth_after_start_at: u8, max_depth: usize) -> Self {
-        Self { lexer, current_token: None, state_seen_start_parse_at: true, max_depth, depth_after_start_at }
+        Self { lexer, current_token: None, state_seen_start_parse_at: true, start_parse_at_index_start: 0, start_parse_at_index_end: 0, max_depth, depth_after_start_at }
     }
 
     pub fn parse(&mut self, parse_option: &ParseOptions, depth: u8) -> Result<ParseResult<&'json str>, String> {
@@ -36,6 +38,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     max_json_depth: self.max_depth,
                     parsing_max_depth: parse_option.max_depth,
                     started_parsing_at: parse_option.start_parse_at.clone(),
+                    started_parsing_at_index_start: self.start_parse_at_index_start,
+                    started_parsing_at_index_end: self.start_parse_at_index_end,
                     parsing_prefix: parse_option.prefix.clone(),
                     depth_after_start_at: self.depth_after_start_at,
                 });
@@ -53,6 +57,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     max_json_depth: self.max_depth,
                     parsing_max_depth: parse_option.max_depth,
                     started_parsing_at: parse_option.start_parse_at.clone(),
+                    started_parsing_at_index_start: self.start_parse_at_index_start,
+                    started_parsing_at_index_end: self.start_parse_at_index_end,
                     parsing_prefix: parse_option.prefix.clone(),
                     depth_after_start_at: self.depth_after_start_at,
                 });
@@ -96,6 +102,10 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
             }
             self.parse_value(route, target, depth, count, parse_option, position)?;
             self.next_token();
+
+            if self.state_seen_start_parse_at && self.depth_after_start_at == depth && self.start_parse_at_index_end == 0 {
+                self.start_parse_at_index_end = target.len() - 1;
+            }
 
 
             match self.current_token {
@@ -144,6 +154,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
             if self.should_parse_array(&route, parse_option) {
                 if !self.state_seen_start_parse_at && parse_option.start_parse_at.is_some() {
                     self.state_seen_start_parse_at = true;
+                    self.start_parse_at_index_start = target.len() - 1;
                     self.depth_after_start_at = depth - 1;
                 }
                 if depth - self.depth_after_start_at <= parse_option.max_depth {
@@ -600,7 +611,8 @@ mod tests {
         let json = json.replace(['\n', ' '], "");
         let json = json.as_str();
 
-        let vec = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap().json;
+        let result = JSONParser::parse(json, ParseOptions::default().start_parse_at("/skills".to_string()).parse_array(false)).unwrap();
+        let vec = result.json;
         assert_eq!(vec.len(), 10);
         assert_eq!(vec[0].pointer.pointer, "/skills");
         assert_eq!(vec[0].pointer.value_type, ValueType::Array(3));
@@ -618,6 +630,8 @@ mod tests {
         assert_eq!(vec[8].pointer.value_type, ValueType::String);
         assert_eq!(vec[9].pointer.pointer, "/skills/2/inner");
         assert_eq!(vec[9].pointer.value_type, ValueType::Array(1));
+        assert_eq!(result.started_parsing_at_index_start, 0);
+        assert_eq!(result.started_parsing_at_index_end, 9);
     }
 
     #[test]
@@ -944,6 +958,9 @@ mod tests {
         let mut json = fs::read_to_string(path).unwrap();
         let mut res = JSONParser::parse(json.as_str(), ParseOptions::default().start_parse_at("/panels".to_string()).parse_array(false)).unwrap();
         let vec = &res.json;
+        assert_eq!(vec[res.started_parsing_at_index_start].pointer.pointer.as_str(), "/panels");
+        assert!(vec[res.started_parsing_at_index_end].pointer.pointer.as_str().starts_with("/panels"));
+        assert!(!vec[res.started_parsing_at_index_end + 1].pointer.pointer.as_str().starts_with("/panels"));
         // vec.iter().for_each(|v| println!("{:?} -> {:?}", v.pointer, v.value));
     }
 }
