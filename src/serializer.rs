@@ -100,7 +100,12 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                                 obj.insert(pointer.to_owned(), Value::Array(Vec::with_capacity(len)));
                             }
                         }
-                        _ => { obj.insert(pointer.to_owned(), value_to_json(value, &key.value_type)); }
+                        _ => {
+                            let value1 = value_to_json(value, &key.value_type);
+                            if !matches!(value1, Value::Null) {
+                                obj.insert(pointer.to_owned(), value1);
+                            }
+                        }
                     }
                 }
                 Value::Array(array) => {
@@ -119,7 +124,12 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                                 array.push(Value::Array(Vec::with_capacity(len)));
                             }
                         }
-                        _ => { array.push(value_to_json(value, &key.value_type)); }
+                        _ => {
+                            let value1 = value_to_json(value, &key.value_type);
+                            if !matches!(value1, Value::Null) {
+                                array.push(value1);
+                            }
+                        }
                     }
                 }
                 _ => panic!("only Object is accepted for root node")
@@ -215,7 +225,12 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                                 obj.insert(k.to_owned(), Value::Array(Vec::with_capacity(len)));
                             }
                         }
-                        _ => { obj.insert(k.to_owned(), value_to_json(value, &key.value_type)); }
+                        _ => {
+                            let value1 = value_to_json(value, &key.value_type);
+                            if !matches!(value1, Value::Null) {
+                                obj.insert(k.to_owned(), value1);
+                            }
+                        }
                     }
                 }
                 Value::Array(array) => {
@@ -234,7 +249,12 @@ pub fn _serialize_to_json<'a, V: Debug + Clone + AsRef<str> + GetBytes>(data: &m
                                 array.push(Value::Array(Vec::with_capacity(len)));
                             }
                         }
-                        _ => { array.push(value_to_json(value, &key.value_type)); }
+                        _ => {
+                            let value1 = value_to_json(value, &key.value_type);
+                            if !matches!(value1, Value::Null) {
+                                array.push(value1);
+                            }
+                        }
                     }
                 }
                 _ => panic!("only Object is accepted for root node")
