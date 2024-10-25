@@ -1,4 +1,3 @@
-
 use std::mem;
 use crate::{concat_string, FlatJsonValue, ParseOptions, ParseResult, PointerFragment, PointerKey, ValueType};
 use crate::lexer::{Lexer, Token};
@@ -95,7 +94,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         self.next_token();
                     }
                     _ => return Err(format!("Expected ':' after object key at this location: {}, previous valid parsed value: {:?}", Self::concat_route(route),
-                                    target.last().map(|e| e.pointer.pointer.as_str()).unwrap_or("")))
+                                            target.last().map(|e| e.pointer.pointer.as_str()).unwrap_or("")))
                 }
             } else {
                 return Err("Expected ':' after object key".to_string());
@@ -127,8 +126,8 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                     if target.len() > 0 {
                         index = target.len() - 1;
                     }
-                    return Err(format!("Expected ',' or '}}' or ']' after object value, got: {:?}, previous nodes {:?}", self.current_token, target[index]))
-                },
+                    return Err(format!("Expected ',' or '}}' or ']' after object value, got: {:?}, previous nodes {:?}", self.current_token, target[index]));
+                }
             }
             route.pop();
         }
@@ -204,15 +203,18 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                         if let Some(object_str) = self.lexer.consume_string_until_end_of_object(true) {
                             *position += 1;
                             let mut parsed = true;
-                            if parse_option.keep_object_raw_data || depth - self.depth_after_start_at == parse_option.max_depth {
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(depth - self.depth_after_start_at < parse_option.max_depth, 0), depth, *position), value: Some(object_str) });
-                            } else {
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Object(true, 0), depth, *position), value: None });
+                            let pointer = Self::concat_route(route);
+                            if Self::should_push_to_target(parse_option, &pointer) {
+                                if parse_option.keep_object_raw_data || depth - self.depth_after_start_at == parse_option.max_depth {
+                                    target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Object(depth - self.depth_after_start_at < parse_option.max_depth, 0), depth, *position), value: Some(object_str) });
+                                } else {
+                                    target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Object(true, 0), depth, *position), value: None });
+                                }
                             }
                             self.lexer.set_reader_index(start);
-                            let object_index = target.len() - 1;
+                            let object_index = if target.len() > 0 { target.len() - 1 } else { 0 };
                             let elements_count = self.process_object(route, target, depth + 1, count, parse_option, position)?;
-                            if matches!(target[object_index].pointer.value_type, ValueType::Object(true, _)) {
+                            if object_index < target.len() && matches!(target[object_index].pointer.value_type, ValueType::Object(true, _)) {
                                 target[object_index].pointer.value_type = ValueType::Object(true, elements_count);
                             }
                         } else {
@@ -227,23 +229,26 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 }
                 Token::SquareOpen => {
                     let mut pointer_index: isize = -1;
+                    let pointer = Self::concat_route(route);
+                    let should_parse_array= Self::should_push_to_target(parse_option, &pointer);
                     if depth - self.depth_after_start_at <= parse_option.max_depth {
                         *position += 1;
                         pointer_index = target.len() as isize;
-                        target.push(FlatJsonValue { pointer: PointerKey::from_pointer(Self::concat_route(route), ValueType::Array(0), depth, *position), value: None });
+                        if should_parse_array {
+                            target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Array(0), depth, *position), value: None });
+                        }
                     }
-                    self.process_array(route, target, depth + 1, count, parse_option, position, pointer_index)?;
+                    if should_parse_array {
+                        self.process_array(route, target, depth + 1, count, parse_option, position, pointer_index)?;
+                    } else {
+                        self.lexer.consume_string_until_end_of_array(self.lexer.reader_index() - 1, false);
+                    }
                     Ok(())
                 }
                 Token::String(value) => {
                     if depth - self.depth_after_start_at <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
-                        if let Some(ref start_parse_at) = parse_option.start_parse_at {
-                            if pointer.starts_with(start_parse_at) {
-                                *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::String, depth, *position), value: Some(value) });
-                            }
-                        } else {
+                        if Self::should_push_to_target(parse_option, &pointer) {
                             *position += 1;
                             target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::String, depth, *position), value: Some(value) });
                         }
@@ -254,12 +259,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 Token::Number(value) => {
                     if depth - self.depth_after_start_at <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
-                        if let Some(ref start_parse_at) = parse_option.start_parse_at {
-                            if pointer.starts_with(start_parse_at) {
-                                *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), value: Some(value) });
-                            }
-                        } else {
+                        if Self::should_push_to_target(parse_option, &pointer) {
                             *position += 1;
                             target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Number, depth, *position), value: Some(value) });
                         }
@@ -269,12 +269,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 Token::Boolean(value) => {
                     if depth - self.depth_after_start_at <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
-                        if let Some(ref start_parse_at) = parse_option.start_parse_at {
-                            if pointer.starts_with(start_parse_at) {
-                                *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), value: Some(value) });
-                            }
-                        } else {
+                        if Self::should_push_to_target(parse_option, &pointer) {
                             *position += 1;
                             target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Bool, depth, *position), value: Some(value) });
                         }
@@ -284,12 +279,7 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
                 Token::Null => {
                     if depth <= parse_option.max_depth {
                         let pointer = Self::concat_route(route);
-                        if let Some(ref start_parse_at) = parse_option.start_parse_at {
-                            if pointer.starts_with(start_parse_at) {
-                                *position += 1;
-                                target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), value: None });
-                            }
-                        } else {
+                        if Self::should_push_to_target(parse_option, &pointer) {
                             *position += 1;
                             target.push(FlatJsonValue { pointer: PointerKey::from_pointer(pointer, ValueType::Null, depth, *position), value: None });
                         }
@@ -300,6 +290,11 @@ impl<'a, 'json: 'a> Parser<'a, 'json> {
             },
             _ => Err("Unexpected end of input".to_string())
         }
+    }
+
+    #[inline]
+    fn should_push_to_target(parse_option: &ParseOptions, pointer: &String) -> bool {
+        parse_option.start_parse_at.is_none() || parse_option.start_parse_at.is_some() && pointer.starts_with(parse_option.start_parse_at.as_ref().unwrap())
     }
 
     fn should_parse_array(&mut self, route: &&mut PointerFragment, parse_option: &ParseOptions) -> bool {
@@ -604,7 +599,14 @@ mod tests {
                     {"description": "Basic Skill", "inner": [2]},
                     {"description": "Heal", "inner": [3]},
                     {"description": "Bash", "inner": [1]}
-                ]
+                ],
+                "statuses": [
+                    {"agi": 10},
+                    {"dex": 19},
+                ],
+                "tree": {
+                    "level": 1
+                }
             }
         "#;
 
@@ -723,7 +725,6 @@ mod tests {
         assert_eq!(vec[2].pointer.depth, 3);
         assert_eq!(vec[3].pointer.pointer, "/skills/0/requires/spCostPerLevel");
         assert_eq!(vec[3].pointer.depth, 4);
-
     }
 
     #[test]
@@ -958,9 +959,21 @@ mod tests {
         let mut json = fs::read_to_string(path).unwrap();
         let mut res = JSONParser::parse(json.as_str(), ParseOptions::default().start_parse_at("/panels".to_string()).parse_array(false)).unwrap();
         let vec = &res.json;
+        vec.iter().for_each(|p| println!("{:?}", p));
         assert_eq!(vec[res.started_parsing_at_index_start].pointer.pointer.as_str(), "/panels");
         assert!(vec[res.started_parsing_at_index_end].pointer.pointer.as_str().starts_with("/panels"));
-        assert!(!vec[res.started_parsing_at_index_end + 1].pointer.pointer.as_str().starts_with("/panels"));
+        // vec.iter().for_each(|v| println!("{:?} -> {:?}", v.pointer, v.value));
+    }
+    #[test]
+    fn parse_openapi() {
+        let path = Path::new("examples/openapi.json");
+        let mut json = fs::read_to_string(path).unwrap();
+        let mut res = JSONParser::parse(json.as_str(), ParseOptions::default().start_parse_at("/info".to_string()).parse_array(false)).unwrap();
+        let vec = &res.json;
+        // vec.iter().for_each(|p| println!("{:?}", p));
+        assert_eq!(vec.len(), 10);
+        assert_eq!(vec[res.started_parsing_at_index_start].pointer.pointer.as_str(), "/info");
+        assert!(vec[res.started_parsing_at_index_end].pointer.pointer.as_str().starts_with("/info"));
         // vec.iter().for_each(|v| println!("{:?} -> {:?}", v.pointer, v.value));
     }
 }

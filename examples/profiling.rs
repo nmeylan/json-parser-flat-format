@@ -20,7 +20,8 @@ use json_flat_parser::{JSONParser, ParseOptions};
 fn main() {
     // run: unzip skill-test.zip skill-test.json
 
-    let path = Path::new("examples/skill-test.json");
+    let path = Path::new("examples/openapi.json");
+    // let path = Path::new("C:\\dev\\ragnarok\\rust-ragnarok-server\\config\\skill.json");
     let mut content = fs::read_to_string(path).unwrap();
     let metadata1 = fs::metadata(path).unwrap();
 
@@ -73,17 +74,20 @@ fn main() {
     // println!("Change depth owned to {} took {} ms, new json len {}", result.parsing_max_depth, start.elapsed().as_millis(), result.json.len());
 
 
-    let options = ParseOptions::default().parse_array(false).keep_object_raw_data(true).start_parse_at("/skills".to_string()).max_depth(6);
+    // let options = ParseOptions::default().parse_array(false).keep_object_raw_data(true).start_parse_at("/skills".to_string()).max_depth(6);
+    let options = ParseOptions::default().parse_array(false).keep_object_raw_data(true).start_parse_at("/info".to_string());
     let mut result = JSONParser::parse(content.as_mut_str(), options.clone()).unwrap();
     println!("Custom parser took {}ms for a {}mb file, max depth {}, {}", start.elapsed().as_millis(), size, result.parsing_max_depth, result.json.len());
+    result.json.iter().for_each(|json| println!("{:?}", json));
     let start = Instant::now();
     // let owned = result.to_owned();
     // println!("to owned took {} ms, {}", start.elapsed().as_millis(), owned.json.len());
-    let start = Instant::now();
-    let value = JSONParser::serialize(&mut result.json);
-    println!("Serialization took {}ms", start.elapsed().as_millis());
-    let start = Instant::now();
+    // let start = Instant::now();
+    // let value = JSONParser::serialize(&mut result.json);
+    // println!("Serialization took {}ms", start.elapsed().as_millis());
+    // let start = Instant::now();
     // value.to_json();
+    // fs::write(path, value.to_json().as_bytes());
     // let res = serde_json::to_string_pretty(&value);
     // println!("Serialization as string took {}ms", start.elapsed().as_millis());
     // let mut sorted_data = result.json;
