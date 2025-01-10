@@ -3,6 +3,10 @@ name = "json-flat-parser"
 version = "0.1.0"
 edition = "2021"
 
+exclude = [
+    "examples/*"
+]
+
 [profile.release]
 debug = 1
 
