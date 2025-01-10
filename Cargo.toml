@@ -2,6 +2,11 @@
 name = "json-flat-parser"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+keywords = ["json", "parser"]
+repository = "https://github.com/nmeylan/json-parser-flat-format"
+readme = "README.md"
+description = "Parse JSON document into a flat data structure"
 
 exclude = [
     "examples/*"
