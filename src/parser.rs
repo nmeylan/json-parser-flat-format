@@ -976,4 +976,36 @@ mod tests {
         assert!(vec[res.started_parsing_at_index_end].pointer.pointer.as_str().starts_with("/info"));
         // vec.iter().for_each(|v| println!("{:?} -> {:?}", v.pointer, v.value));
     }
+
+    #[test]
+    fn parse_square_in_string() {
+        let json = r#"[{
+                "name":"tot",
+                "actions": [
+                    {
+                        "execution_count": 0,
+                        "last_executed_on": 0,
+                        "name": "J2}",
+                        "users_usages": []
+                    }, {
+                        "execution_count": 0,
+                        "last_executed_on": 0,
+                        "name": "J1S]",
+                        "users_usages": [
+                        ]
+                    },{
+                        "execution_count": 0,
+                        "last_executed_on": 0,
+                        "name": "J2",
+                        "users_usages": [
+                        ]
+                    }
+                ],
+                "number_of_usage": 10
+            }"#;
+        let mut res = JSONParser::parse(&json, ParseOptions::default().parse_array(false)).unwrap();
+        let vec = &res.json;
+        vec.iter().for_each(|v| println!("{:?} -> {:?}", v.pointer, v.value));
+
+    }
 }

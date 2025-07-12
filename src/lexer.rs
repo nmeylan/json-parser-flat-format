@@ -105,49 +105,6 @@ impl<'json> Lexer<'json> {
         }
     }
 
-    #[inline]
-    pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize, nested_array: bool) -> Option<&'json str> {
-        let mut square_close_count = 1;
-        if nested_array {
-            square_close_count += 1;
-        }
-        while !self.reader.is_at_end() {
-            let current_index = self.reader.index;
-            let (bytes, _) = self.reader.next_u64();
-            let comparison_square_close = MASK_CLOSE_SQUARE ^ bytes;
-            let comparison_square_open = MASK_OPEN_SQUARE ^ bytes;
-            let high_bit_mask_square_close = (((comparison_square_close >> 1) | 0x8080808080808080) - comparison_square_close) & 0x8080808080808080;
-            let high_bit_mask_square_open = (((comparison_square_open >> 1) | 0x8080808080808080) - comparison_square_open) & 0x8080808080808080;
-            if high_bit_mask_square_close == 0 && high_bit_mask_square_open == 0 {
-                continue;
-            } else {
-                let mut index = 0;
-                if high_bit_mask_square_close != 0 {
-                    index = (high_bit_mask_square_close.trailing_zeros() >> 3) as usize;
-                }
-                if high_bit_mask_square_open != 0 {
-                    let open_index = (high_bit_mask_square_open.trailing_zeros() >> 3) as usize;
-                    if open_index < index {
-                        index = open_index;
-                    }
-                }
-                self.reader.index = current_index + index;
-            }
-            match self.reader.next()? {
-                b'[' => square_close_count += 1,
-                b']' => {
-                    if square_close_count == 1 {
-                        return string_from_bytes(&self.reader.slice[array_start_index..self.reader.index]);
-                    } else {
-                        square_close_count -= 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-
     pub fn reader_index(&self) -> usize {
         self.reader.index
     }
@@ -160,48 +117,144 @@ impl<'json> Lexer<'json> {
     }
 
     #[inline]
-    pub fn consume_string_until_end_of_object(&mut self, should_return: bool) -> Option<&'json str> {
+    pub fn consume_string_until_end_of_array(&mut self, array_start_index: usize, nested_array: bool) -> Option<&'json str> {
         let mut square_close_count = 1;
-        let start = self.reader.index - 1;
-        while !self.reader.is_at_end() {
-            let current_index = self.reader.index;
-            let (bytes, _) = self.reader.next_u64();
-            let comparison_curly_close = MASK_CLOSE_CURLY ^ bytes;
-            let comparison_curly_open = MASK_OPEN_CURLY ^ bytes;
-            let high_bit_mask_curly_close = (((comparison_curly_close >> 1) | 0x8080808080808080) - comparison_curly_close) & 0x8080808080808080;
-            let high_bit_mask_curly_open = (((comparison_curly_open >> 1) | 0x8080808080808080) - comparison_curly_open) & 0x8080808080808080;
+        if nested_array {
+            square_close_count += 1;
+        }
 
-            if high_bit_mask_curly_close == 0 && high_bit_mask_curly_open == 0 {
+        let mut in_string = false;
+        let mut escaped = false;
+
+        while !self.reader.is_at_end() {
+            // If we're in a string, we need to carefully process each character
+            if in_string {
+                let ch = self.reader.next()?;
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                match ch {
+                    b'\\' => escaped = true,
+                    b'"' => in_string = false,
+                    _ => {}
+                }
                 continue;
-            } else {
-                let mut index = 0;
-                if high_bit_mask_curly_close != 0 {
-                    index = (high_bit_mask_curly_close.trailing_zeros() >> 3) as usize;
-                }
-                if high_bit_mask_curly_open != 0 {
-                    let open_index = (high_bit_mask_curly_open.trailing_zeros() >> 3) as usize;
-                    if open_index < index {
-                        index = open_index;
-                    }
-                }
-                self.reader.index = current_index + index;
             }
 
-            match self.reader.next()? {
-                b'{' => square_close_count += 1,
-                b'}' => {
-                    if square_close_count == 1 {
-                        if should_return {
-                            let value = string_from_bytes(&self.reader.slice[start..self.reader.index])?;
-                            return Some(value);
-                        } else {
-                            break;
-                        }
-                    } else {
-                        square_close_count -= 1;
+            // We're not in a string, so we can use SIMD optimization
+            let current_index = self.reader.index;
+            let (bytes, bytes_read) = self.reader.next_u64();
+
+            let comparison_square_close = MASK_CLOSE_SQUARE ^ bytes;
+            let comparison_square_open = MASK_OPEN_SQUARE ^ bytes;
+            let comparison_quote = MASK_QUOTE ^ bytes;
+
+            let high_bit_mask_square_close = (((comparison_square_close >> 1) | 0x8080808080808080) - comparison_square_close) & 0x8080808080808080;
+            let high_bit_mask_square_open = (((comparison_square_open >> 1) | 0x8080808080808080) - comparison_square_open) & 0x8080808080808080;
+            let high_bit_mask_quote = (((comparison_quote >> 1) | 0x8080808080808080) - comparison_quote) & 0x8080808080808080;
+
+            let combined_mask = high_bit_mask_square_close | high_bit_mask_square_open | high_bit_mask_quote;
+
+            if combined_mask == 0 {
+                // No interesting characters in this chunk
+                continue;
+            }
+
+            // Found something interesting, process bytes in order
+            self.reader.index = current_index;
+            let chunk_end = current_index + bytes_read;
+
+            while self.reader.index < chunk_end && !self.reader.is_at_end() {
+                let ch = self.reader.next()?;
+                match ch {
+                    b'"' => {
+                        in_string = true;
+                        break; // Exit chunk processing, will handle string on next iteration
                     }
+                    b'[' => square_close_count += 1,
+                    b']' => {
+                        if square_close_count == 1 {
+                            return string_from_bytes(&self.reader.slice[array_start_index..self.reader.index]);
+                        } else {
+                            square_close_count -= 1;
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
+            }
+        }
+        None
+    }
+
+    #[inline]
+    pub fn consume_string_until_end_of_object(&mut self, should_return: bool) -> Option<&'json str> {
+        let mut curly_close_count = 1;
+        let start = self.reader.index - 1;
+        let mut in_string = false;
+        let mut escaped = false;
+
+        while !self.reader.is_at_end() {
+            // If we're in a string, we need to carefully process each character
+            if in_string {
+                let ch = self.reader.next()?;
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+                match ch {
+                    b'\\' => escaped = true,
+                    b'"' => in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+
+            // We're not in a string, so we can use SIMD optimization
+            let current_index = self.reader.index;
+            let (bytes, bytes_read) = self.reader.next_u64();
+
+            let comparison_curly_close = MASK_CLOSE_CURLY ^ bytes;
+            let comparison_curly_open = MASK_OPEN_CURLY ^ bytes;
+            let comparison_quote = MASK_QUOTE ^ bytes;
+
+            let high_bit_mask_curly_close = (((comparison_curly_close >> 1) | 0x8080808080808080) - comparison_curly_close) & 0x8080808080808080;
+            let high_bit_mask_curly_open = (((comparison_curly_open >> 1) | 0x8080808080808080) - comparison_curly_open) & 0x8080808080808080;
+            let high_bit_mask_quote = (((comparison_quote >> 1) | 0x8080808080808080) - comparison_quote) & 0x8080808080808080;
+
+            let combined_mask = high_bit_mask_curly_close | high_bit_mask_curly_open | high_bit_mask_quote;
+
+            if combined_mask == 0 {
+                // No interesting characters in this chunk
+                continue;
+            }
+
+            // Found something interesting, process bytes in order
+            self.reader.index = current_index;
+            let chunk_end = current_index + bytes_read;
+
+            while self.reader.index < chunk_end && !self.reader.is_at_end() {
+                let ch = self.reader.next()?;
+                match ch {
+                    b'"' => {
+                        in_string = true;
+                        break; // Exit chunk processing, will handle string on next iteration
+                    }
+                    b'{' => curly_close_count += 1,
+                    b'}' => {
+                        if curly_close_count == 1 {
+                            if should_return {
+                                let value = string_from_bytes(&self.reader.slice[start..self.reader.index])?;
+                                return Some(value);
+                            } else {
+                                return None;
+                            }
+                        } else {
+                            curly_close_count -= 1;
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
         None
