@@ -352,6 +352,168 @@ impl JSONParser {
         serialize_to_json(data)
     }
 
+    pub fn is_jsonl(input: &[u8]) -> bool {
+
+        // Content heuristic: look for }\n{ or }\r\n{ pattern in first 4KB
+        // Skip leading whitespace
+        let mut i = 0;
+        while i < input.len() && input[i].is_ascii_whitespace() {
+            i += 1;
+        }
+
+        // Must start with { to be JSONL (not array)
+        if i >= input.len() || input[i] != b'{' {
+            return false;
+        }
+
+        // Look for }\n{ or }\r\n{ pattern
+        let check_len = input.len().min(4096);
+        let mut in_string = false;
+        let mut escaped = false;
+
+        while i < check_len {
+            let ch = input[i];
+
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == b'\\' {
+                    escaped = true;
+                } else if ch == b'"' {
+                    in_string = false;
+                }
+                i += 1;
+                continue;
+            }
+
+            match ch {
+                b'"' => in_string = true,
+                b'}' => {
+                    // Check for }\n{ or }\r\n{
+                    if i + 2 < check_len {
+                        if input[i + 1] == b'\n' && input[i + 2] == b'{' {
+                            return true;
+                        }
+                        if i + 3 < check_len && input[i + 1] == b'\r' && input[i + 2] == b'\n' && input[i + 3] == b'{' {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+
+        false
+    }
+
+    pub fn parse_jsonl(input: &[u8], options: ParseOptions) -> Result<ParseResult<String>, String> {
+        let mut all_values: Vec<FlatJsonValue<String>> = Vec::with_capacity(1024);
+        let mut row_index = 0_usize;
+        let mut max_depth = 0_usize;
+        let mut line_number = 0_usize;
+
+        // Root array pointer (will update size at the end)
+        all_values.push(FlatJsonValue {
+            pointer: PointerKey::from_pointer(String::new(), ValueType::Array(0), 1, 0),
+            value: None,
+        });
+
+        // Split by newlines and process each line
+        let mut line_start = 0;
+        for (i, &byte) in input.iter().enumerate() {
+            if byte == b'\n' || i == input.len() - 1 {
+                let line_end = if byte == b'\n' { i } else { i + 1 };
+                let line = &input[line_start..line_end];
+                line_number += 1;
+
+                // Trim whitespace and skip empty lines
+                let trimmed = trim_ascii_whitespace(line);
+                if !trimmed.is_empty() {
+                    // Parse this line as a JSON object
+                    let line_options = ParseOptions {
+                        parse_array: options.parse_array,
+                        keep_object_raw_data: options.keep_object_raw_data,
+                        max_depth: options.max_depth,
+                        start_parse_at: None,
+                        start_depth: 2, // Objects are at depth 2 (root array is depth 1)
+                        prefix: Some(format!("/{}", row_index)),
+                    };
+
+                    match Self::parse_bytes(trimmed, line_options) {
+                        Ok(line_result) => {
+                            max_depth = max_depth.max(line_result.max_json_depth);
+
+                            // Count root-level elements for this object
+                            let elements_count = line_result.json.iter()
+                                .filter(|e| e.pointer.depth == 2)
+                                .count();
+
+                            // Add the root object entry for this row with raw content
+                            let raw_content = if options.keep_object_raw_data {
+                                string_from_bytes(trimmed).map(|s| s.to_owned())
+                            } else {
+                                None
+                            };
+                            all_values.push(FlatJsonValue {
+                                pointer: PointerKey::from_pointer(
+                                    format!("/{}", row_index),
+                                    ValueType::Object(true, elements_count),
+                                    2,
+                                    row_index + 1,
+                                ),
+                                value: raw_content,
+                            });
+
+                            // Convert &str values to String and extend with parsed fields
+                            for entry in line_result.json {
+                                all_values.push(FlatJsonValue {
+                                    pointer: entry.pointer,
+                                    value: entry.value.map(|s| s.to_owned()),
+                                });
+                            }
+                            row_index += 1;
+                        }
+                        Err(e) => {
+                            return Err(format!("Error parsing JSONL at line {}: {}", line_number, e));
+                        }
+                    }
+                }
+
+                line_start = i + 1;
+            }
+        }
+
+        // Update array size in root pointer
+        all_values[0].pointer.value_type = ValueType::Array(row_index);
+
+        Ok(ParseResult {
+            max_json_depth: max_depth,
+            parsing_max_depth: options.max_depth,
+            started_parsing_at: None,
+            started_parsing_at_index_start: 0,
+            started_parsing_at_index_end: all_values.len().saturating_sub(1),
+            json: all_values,
+            parsing_prefix: None,
+            depth_after_start_at: 0,
+        })
+    }
+}
+
+/// Trim leading and trailing ASCII whitespace from a byte slice
+#[inline]
+fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
+    let mut start = 0;
+    let mut end = bytes.len();
+
+    while start < end && bytes[start].is_ascii_whitespace() {
+        start += 1;
+    }
+    while end > start && bytes[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+
+    &bytes[start..end]
 }
 
 
@@ -362,5 +524,168 @@ pub fn string_from_bytes(bytes: &[u8]) -> Option<&str> {
     }
     #[cfg(not(feature = "simdutf8"))]{
         std::str::from_utf8(bytes).ok()
+    }
+}
+
+#[cfg(test)]
+mod jsonl_tests {
+    use super::*;
+
+    // Detection tests
+    #[test]
+    fn test_is_jsonl_json_array_not_jsonl() {
+        let content = b"[{\"id\": 1}, {\"id\": 2}]";
+        assert!(!JSONParser::is_jsonl(content));
+        assert!(!JSONParser::is_jsonl(content));
+    }
+
+    #[test]
+    fn test_is_jsonl_single_object_not_jsonl() {
+        let content = b"{\"id\": 1, \"name\": \"test\"}";
+        assert!(!JSONParser::is_jsonl(content));
+        assert!(!JSONParser::is_jsonl(content));
+    }
+
+    #[test]
+    fn test_is_jsonl_by_content() {
+        let content = b"{\"id\": 1}\n{\"id\": 2}";
+        assert!(JSONParser::is_jsonl(content));
+        assert!(JSONParser::is_jsonl(content));
+    }
+
+    #[test]
+    fn test_is_jsonl_crlf() {
+        let content = b"{\"id\": 1}\r\n{\"id\": 2}";
+        assert!(JSONParser::is_jsonl(content));
+    }
+
+    #[test]
+    fn test_is_jsonl_string_with_brace() {
+        // Should not detect }\n{ inside a string
+        let content = b"{\"data\": \"}\\n{\"}";
+        assert!(!JSONParser::is_jsonl(content));
+    }
+
+    // Parsing tests
+    #[test]
+    fn test_parse_jsonl_basic() {
+        let content = b"{\"id\": 1}\n{\"id\": 2}\n{\"id\": 3}";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        // Root array
+        assert_eq!(result.json[0].pointer.pointer, "");
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(3));
+
+        // First row object entry with raw content
+        assert_eq!(result.json[1].pointer.pointer, "/0");
+        assert!(matches!(result.json[1].pointer.value_type, ValueType::Object(true, 1)));
+        assert_eq!(result.json[1].value, Some("{\"id\": 1}".to_string()));
+
+        // First row field
+        assert_eq!(result.json[2].pointer.pointer, "/0/id");
+        assert_eq!(result.json[2].value, Some("1".to_string()));
+
+        // Second row object entry
+        assert_eq!(result.json[3].pointer.pointer, "/1");
+        assert!(matches!(result.json[3].pointer.value_type, ValueType::Object(true, 1)));
+        assert_eq!(result.json[3].value, Some("{\"id\": 2}".to_string()));
+
+        // Second row field
+        assert_eq!(result.json[4].pointer.pointer, "/1/id");
+        assert_eq!(result.json[4].value, Some("2".to_string()));
+
+        // Third row object entry
+        assert_eq!(result.json[5].pointer.pointer, "/2");
+        assert_eq!(result.json[5].value, Some("{\"id\": 3}".to_string()));
+
+        // Third row field
+        assert_eq!(result.json[6].pointer.pointer, "/2/id");
+        assert_eq!(result.json[6].value, Some("3".to_string()));
+    }
+
+    #[test]
+    fn test_parse_jsonl_empty_lines() {
+        let content = b"{\"id\": 1}\n\n{\"id\": 2}\n\n";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(2));
+    }
+
+    #[test]
+    fn test_parse_jsonl_single_line() {
+        let content = b"{\"id\": 1, \"name\": \"test\"}";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(1));
+        // Object entry at /0
+        assert_eq!(result.json[1].pointer.pointer, "/0");
+        assert!(matches!(result.json[1].pointer.value_type, ValueType::Object(true, 2)));
+        // Fields
+        assert_eq!(result.json[2].pointer.pointer, "/0/id");
+        assert_eq!(result.json[3].pointer.pointer, "/0/name");
+    }
+
+    #[test]
+    fn test_parse_jsonl_nested_objects() {
+        let content = b"{\"user\": {\"name\": \"Alice\"}}\n{\"user\": {\"name\": \"Bob\"}}";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(2));
+    }
+
+    #[test]
+    fn test_parse_jsonl_different_schemas() {
+        let content = b"{\"id\": 1}\n{\"name\": \"test\"}\n{\"id\": 3, \"name\": \"both\"}";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(3));
+    }
+
+    #[test]
+    fn test_parse_jsonl_invalid_line() {
+        let content = b"{\"id\": 1}\n{invalid json}\n{\"id\": 3}";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default());
+        assert!(result.is_ok());
+        let result = result.unwrap();
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(3));
+    }
+
+    #[test]
+    fn test_parse_jsonl_unicode() {
+        let content = "{\"name\": \"日本語\"}\n{\"name\": \"émoji 🎉\"}".as_bytes();
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(2));
+        // Object entry at /0
+        assert_eq!(result.json[1].pointer.pointer, "/0");
+        // Field with unicode value
+        assert_eq!(result.json[2].pointer.pointer, "/0/name");
+        assert_eq!(result.json[2].value, Some("日本語".to_string()));
+    }
+
+    #[test]
+    fn test_parse_jsonl_trailing_newline() {
+        let content = b"{\"id\": 1}\n{\"id\": 2}\n";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        // Should have 2 rows, not 3
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(2));
+    }
+
+    #[test]
+    fn test_parse_jsonl_no_trailing_newline() {
+        let content = b"{\"id\": 1}\n{\"id\": 2}";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default()).unwrap();
+
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(2));
+    }
+
+    #[test]
+    fn test_parse_jsonl_max_depth() {
+        let content = b"{\"a\": {\"b\": {\"c\": 1}}}\n{\"a\": {\"b\": {\"c\": 2}}}";
+        let result = JSONParser::parse_jsonl(content, ParseOptions::default().max_depth(2)).unwrap();
+
+        // With max_depth 2, nested objects beyond that should be kept as raw strings
+        assert_eq!(result.json[0].pointer.value_type, ValueType::Array(2));
     }
 }
