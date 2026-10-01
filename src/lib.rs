@@ -354,7 +354,6 @@ impl JSONParser {
 
     pub fn is_jsonl(input: &[u8]) -> bool {
 
-        // Content heuristic: look for }\n{ or }\r\n{ pattern in first 4KB
         // Skip leading whitespace
         let mut i = 0;
         while i < input.len() && input[i].is_ascii_whitespace() {
@@ -366,13 +365,14 @@ impl JSONParser {
             return false;
         }
 
-        // Look for }\n{ or }\r\n{ pattern
-        let check_len = input.len().min(4096);
+        // Find the end of the first root object, whatever its length, then expect a newline followed by another object
+        let mut depth = 0_usize;
         let mut in_string = false;
         let mut escaped = false;
 
-        while i < check_len {
+        while i < input.len() {
             let ch = input[i];
+            i += 1;
 
             if in_string {
                 if escaped {
@@ -382,24 +382,33 @@ impl JSONParser {
                 } else if ch == b'"' {
                     in_string = false;
                 }
-                i += 1;
                 continue;
             }
 
             match ch {
                 b'"' => in_string = true,
-                b'}' => {
-                    // Check for }\n{ or }\r\n{
-                    if i + 2 < check_len {
-                        if input[i + 1] == b'\n' && input[i + 2] == b'{' {
-                            return true;
-                        }
-                        if i + 3 < check_len && input[i + 1] == b'\r' && input[i + 2] == b'\n' && input[i + 3] == b'{' {
-                            return true;
-                        }
+                b'{' | b'[' => depth += 1,
+                b'}' | b']' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        break;
                     }
                 }
                 _ => {}
+            }
+        }
+
+        if depth != 0 {
+            return false;
+        }
+
+        let mut seen_newline = false;
+        while i < input.len() {
+            match input[i] {
+                b'\n' => seen_newline = true,
+                b' ' | b'\t' | b'\r' => {}
+                b'{' => return seen_newline,
+                _ => return false,
             }
             i += 1;
         }
@@ -429,7 +438,23 @@ impl JSONParser {
 
                 // Trim whitespace and skip empty lines
                 let trimmed = trim_ascii_whitespace(line);
-                if !trimmed.is_empty() {
+                if !trimmed.is_empty() && options.max_depth < 2 {
+                    // Same as a root array at max depth: keep the raw row, unparsed, so change_depth can expand it later
+                    let raw_content = string_from_bytes(trimmed)
+                        .ok_or_else(|| format!("Error parsing JSONL at line {}: invalid utf-8", line_number))?
+                        .to_owned();
+                    max_depth = max_depth.max(2);
+                    all_values.push(FlatJsonValue {
+                        pointer: PointerKey::from_pointer(
+                            format!("/{}", row_index),
+                            ValueType::Object(false, 0),
+                            1,
+                            row_index + 1,
+                        ),
+                        value: Some(raw_content),
+                    });
+                    row_index += 1;
+                } else if !trimmed.is_empty() {
                     // Parse this line as a JSON object
                     let line_options = ParseOptions {
                         parse_array: options.parse_array,
@@ -459,7 +484,7 @@ impl JSONParser {
                                 pointer: PointerKey::from_pointer(
                                     format!("/{}", row_index),
                                     ValueType::Object(true, elements_count),
-                                    2,
+                                    1,
                                     row_index + 1,
                                 ),
                                 value: raw_content,
@@ -687,5 +712,45 @@ mod jsonl_tests {
 
         // With max_depth 2, nested objects beyond that should be kept as raw strings
         assert_eq!(result.json[0].pointer.value_type, ValueType::Array(2));
+    }
+
+    #[test]
+    fn test_is_jsonl_long_first_line() {
+        let long = "x".repeat(10_000);
+        let content = format!("{{\"a\":\"{}\",\"b\":{{\"c\":[1,{{}}]}}}}\r\n{{\"a\":\"y\"}}\r\n", long);
+        assert!(JSONParser::is_jsonl(content.as_bytes()));
+    }
+
+    fn summarize(json: &[FlatJsonValue<String>]) -> Vec<(String, ValueType, u8)> {
+        let mut v: Vec<_> = json.iter().map(|e| (e.pointer.pointer.clone(), e.pointer.value_type.clone(), e.pointer.depth)).collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        v
+    }
+
+    #[test]
+    fn test_parse_jsonl_matches_array() {
+        let jsonl = b"{\"a\":1,\"b\":{\"c\":2}}\n{\"a\":3,\"b\":{\"c\":4}}\n";
+        let array = br#"[{"a":1,"b":{"c":2}},{"a":3,"b":{"c":4}}]"#;
+        for depth in [1u8, 2, u8::MAX] {
+            let options = ParseOptions::default().parse_array(false).max_depth(depth);
+            let l = JSONParser::parse_jsonl(jsonl, options.clone()).unwrap();
+            let a = JSONParser::parse_bytes(array, options).unwrap().to_owned();
+            assert_eq!(summarize(&l.json), summarize(&a.json), "depth {}", depth);
+        }
+    }
+
+    #[test]
+    fn test_parse_jsonl_max_depth_1_then_change_depth() {
+        let content = b"{\"a\":1,\"b\":{\"c\":2}}\n{\"a\":3,\"b\":{\"c\":4}}\n";
+        let mut result = JSONParser::parse_jsonl(content, ParseOptions::default().parse_array(false).max_depth(1)).unwrap();
+        assert_eq!(result.json.len(), 3);
+        assert_eq!(result.json[1].pointer.value_type, ValueType::Object(false, 0));
+        assert_eq!(result.json[1].value.as_deref(), Some("{\"a\":1,\"b\":{\"c\":2}}"));
+
+        JSONParser::change_depth_owned(&mut result, ParseOptions::default().parse_array(false).max_depth(2)).unwrap();
+        let pointers: Vec<_> = result.json.iter().map(|e| e.pointer.pointer.as_str()).collect();
+        assert!(pointers.contains(&"/0/a"));
+        assert!(pointers.contains(&"/1/b"));
+        assert_eq!(result.json[1].pointer.value_type, ValueType::Object(true, 2));
     }
 }
