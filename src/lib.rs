@@ -15,6 +15,8 @@ pub struct JSONParser {}
 pub struct ParseOptions {
     pub parse_array: bool,
     pub keep_object_raw_data: bool,
+    // Objects deeper than this (relative to where parsing starts) do not keep raw data, except those at max_depth which are needed to parse deeper
+    pub keep_object_raw_data_max_depth: u8,
     pub max_depth: u8,
     pub start_parse_at: Option<String>,
     pub start_depth: u8,
@@ -26,6 +28,7 @@ impl Default for ParseOptions {
         Self {
             parse_array: true,
             keep_object_raw_data: true,
+            keep_object_raw_data_max_depth: u8::MAX,
             max_depth: 10,
             start_parse_at: None,
             start_depth: 1,
@@ -58,6 +61,10 @@ impl ParseOptions {
     }
     pub fn keep_object_raw_data(mut self, keep_object_raw_data: bool) -> Self {
         self.keep_object_raw_data = keep_object_raw_data;
+        self
+    }
+    pub fn keep_object_raw_data_max_depth(mut self, keep_object_raw_data_max_depth: u8) -> Self {
+        self.keep_object_raw_data_max_depth = keep_object_raw_data_max_depth;
         self
     }
 }
@@ -338,6 +345,22 @@ impl JSONParser {
         let mut parser = Parser::new(&mut lexer);
         parser.parse(&options, options.start_depth)
     }
+    /// Parse the content of `object`, kept unparsed with its raw data by a previous parse which stopped at its depth,
+    /// as this previous parse would have done it with `options`.
+    /// Returns entries of the object content, with positions starting at 1, and the number of elements of the object.
+    pub fn parse_object_raw_data<'json, V: Debug + Clone + AsRef<str> + GetBytes + From<&'json str>>(raw_data: &'json str, object: &PointerKey, depth_after_start_at: u8, options: &ParseOptions) -> Result<(ParseResult<V>, usize), String> {
+        let mut lexer = Lexer::new(raw_data.as_bytes());
+        let mut parser = Parser::new_for_change_depth(&mut lexer, depth_after_start_at, 0);
+        let mut options = options.clone();
+        options.prefix = Some(object.pointer.clone());
+        parser.parse_object_into(&options, object.depth + 1)
+    }
+    // Same as parse_bytes(..).to_owned() without holding both borrowed and owned entries in memory
+    pub fn parse_bytes_owned(input: &[u8], options: ParseOptions) -> Result<ParseResult<String>, String> {
+        let mut lexer = Lexer::new(input);
+        let mut parser = Parser::new(&mut lexer);
+        parser.parse_into(&options, options.start_depth)
+    }
 
 
     change_depth!(&'json str, change_depth, |r: ParseResult<&'json str>| r);
@@ -420,7 +443,6 @@ impl JSONParser {
         let mut all_values: Vec<FlatJsonValue<String>> = Vec::with_capacity(1024);
         let mut row_index = 0_usize;
         let mut max_depth = 0_usize;
-        let mut line_number = 0_usize;
 
         // Root array pointer (will update size at the end)
         all_values.push(FlatJsonValue {
@@ -428,85 +450,11 @@ impl JSONParser {
             value: None,
         });
 
-        // Split by newlines and process each line
-        let mut line_start = 0;
-        for (i, &byte) in input.iter().enumerate() {
-            if byte == b'\n' || i == input.len() - 1 {
-                let line_end = if byte == b'\n' { i } else { i + 1 };
-                let line = &input[line_start..line_end];
-                line_number += 1;
-
-                // Trim whitespace and skip empty lines
-                let trimmed = trim_ascii_whitespace(line);
-                if !trimmed.is_empty() && options.max_depth < 2 {
-                    // Same as a root array at max depth: keep the raw row, unparsed, so change_depth can expand it later
-                    let raw_content = string_from_bytes(trimmed)
-                        .ok_or_else(|| format!("Error parsing JSONL at line {}: invalid utf-8", line_number))?
-                        .to_owned();
-                    max_depth = max_depth.max(2);
-                    all_values.push(FlatJsonValue {
-                        pointer: PointerKey::from_pointer(
-                            format!("/{}", row_index),
-                            ValueType::Object(false, 0),
-                            1,
-                            row_index + 1,
-                        ),
-                        value: Some(raw_content),
-                    });
-                    row_index += 1;
-                } else if !trimmed.is_empty() {
-                    // Parse this line as a JSON object
-                    let line_options = ParseOptions {
-                        parse_array: options.parse_array,
-                        keep_object_raw_data: options.keep_object_raw_data,
-                        max_depth: options.max_depth,
-                        start_parse_at: None,
-                        start_depth: 2, // Objects are at depth 2 (root array is depth 1)
-                        prefix: Some(format!("/{}", row_index)),
-                    };
-
-                    match Self::parse_bytes(trimmed, line_options) {
-                        Ok(line_result) => {
-                            max_depth = max_depth.max(line_result.max_json_depth);
-
-                            // Count root-level elements for this object
-                            let elements_count = line_result.json.iter()
-                                .filter(|e| e.pointer.depth == 2)
-                                .count();
-
-                            // Add the root object entry for this row with raw content
-                            let raw_content = if options.keep_object_raw_data {
-                                string_from_bytes(trimmed).map(|s| s.to_owned())
-                            } else {
-                                None
-                            };
-                            all_values.push(FlatJsonValue {
-                                pointer: PointerKey::from_pointer(
-                                    format!("/{}", row_index),
-                                    ValueType::Object(true, elements_count),
-                                    1,
-                                    row_index + 1,
-                                ),
-                                value: raw_content,
-                            });
-
-                            // Convert &str values to String and extend with parsed fields
-                            for entry in line_result.json {
-                                all_values.push(FlatJsonValue {
-                                    pointer: entry.pointer,
-                                    value: entry.value.map(|s| s.to_owned()),
-                                });
-                            }
-                            row_index += 1;
-                        }
-                        Err(e) => {
-                            return Err(format!("Error parsing JSONL at line {}: {}", line_number, e));
-                        }
-                    }
-                }
-
-                line_start = i + 1;
-            }
+        for (line_number, line) in Self::jsonl_lines(input) {
+            let (row, row_max_depth) = Self::parse_jsonl_line::<String>(line, line_number, row_index, &options)?;
+            max_depth = max_depth.max(row_max_depth);
+            all_values.extend(row);
+            row_index += 1;
         }
 
         // Update array size in root pointer
@@ -522,6 +470,60 @@ impl JSONParser {
             parsing_prefix: None,
             depth_after_start_at: 0,
         })
+    }
+
+    /// Non-empty lines of a JSONL input, trimmed, with their 1-based line number
+    pub fn jsonl_lines(input: &[u8]) -> impl Iterator<Item = (usize, &[u8])> {
+        input.split(|byte| *byte == b'\n')
+            .enumerate()
+            .map(|(i, line)| (i + 1, trim_ascii_whitespace(line)))
+            .filter(|(_, line)| !line.is_empty())
+    }
+
+    /// Parse one JSONL line (as given by jsonl_lines) as row `row_index` of the root array.
+    /// Returns the row object entry followed by its fields, and the max json depth of the row.
+    pub fn parse_jsonl_line<'json, V: Debug + Clone + AsRef<str> + GetBytes + From<&'json str>>(line: &'json [u8], line_number: usize, row_index: usize, options: &ParseOptions) -> Result<(Vec<FlatJsonValue<V>>, usize), String> {
+        if options.max_depth < 2 {
+            // Same as a root array at max depth: keep the raw row, unparsed, so change_depth can expand it later
+            let raw_content = V::from(string_from_bytes(line)
+                .ok_or_else(|| format!("Error parsing JSONL at line {}: invalid utf-8", line_number))?);
+            let row = FlatJsonValue {
+                pointer: PointerKey::from_pointer(format!("/{}", row_index), ValueType::Object(false, 0), 1, row_index + 1),
+                value: Some(raw_content),
+            };
+            return Ok((vec![row], 2));
+        }
+        let line_options = ParseOptions {
+            parse_array: options.parse_array,
+            keep_object_raw_data: options.keep_object_raw_data,
+            keep_object_raw_data_max_depth: options.keep_object_raw_data_max_depth,
+            max_depth: options.max_depth,
+            start_parse_at: None,
+            start_depth: 2, // Objects are at depth 2 (root array is depth 1)
+            prefix: Some(format!("/{}", row_index)),
+        };
+        let mut lexer = Lexer::new(line);
+        let line_result = Parser::new(&mut lexer).parse_into::<V>(&line_options, line_options.start_depth)
+            .map_err(|e| format!("Error parsing JSONL at line {}: {}", line_number, e))?;
+
+        // Count root-level elements for this object
+        let elements_count = line_result.json.iter()
+            .filter(|e| e.pointer.depth == 2)
+            .count();
+
+        // Root object entry for this row with raw content
+        let raw_content = if options.keep_object_raw_data {
+            string_from_bytes(line).map(V::from)
+        } else {
+            None
+        };
+        let mut row = Vec::with_capacity(line_result.json.len() + 1);
+        row.push(FlatJsonValue {
+            pointer: PointerKey::from_pointer(format!("/{}", row_index), ValueType::Object(true, elements_count), 1, row_index + 1),
+            value: raw_content,
+        });
+        row.extend(line_result.json);
+        Ok((row, line_result.max_json_depth))
     }
 }
 
